@@ -2,24 +2,28 @@
 
 ## Purpose
 
-Let a tenant of one of rooms A–E sign in with a room letter plus a 10-character access code, and keep them signed in via a signed httpOnly session cookie, so they can view only their own room's information. Codes are stored exclusively as bcrypt hashes seeded from environment variables; no tenant personal information is ever stored.
+Let a tenant of one of rooms A–E sign in with a room letter plus a 4–64 character alphanumeric password, and keep them signed in via a signed httpOnly session cookie, so they can view only their own room's information. Passwords are stored exclusively as bcrypt hashes seeded from environment variables; no tenant personal information is ever stored.
 
 ## Requirements
 
 ### Requirement: Tenant sign-in by room letter and access code
-The system SHALL authenticate a tenant by accepting a room letter (A–E) and a 10-character access code, and SHALL establish a session only when both match the seeded values for that room.
+The system SHALL authenticate a tenant by accepting a room letter (A–E) and a room password of 4–64 alphanumeric characters (`A–Z`, `a–z`, `0–9`), and SHALL establish a session only when both match the stored values for that room.
 
 #### Scenario: Successful login
-- **WHEN** a tenant submits room letter "B" with the correct current 10-character access code for room B
+- **WHEN** a tenant submits room letter "B" with the correct current password for room B
 - **THEN** the system establishes a session for room B and redirects the tenant to the room B dashboard
 
 #### Scenario: Wrong access code
-- **WHEN** a tenant submits room letter "C" with a 10-character code that is not room C's current code
+- **WHEN** a tenant submits room letter "C" with a 4–64 character alphanumeric password that is not room C's current password
 - **THEN** the system rejects the login without establishing a session and reports invalid credentials
 
 #### Scenario: Unknown or invalid room letter
-- **WHEN** a tenant submits a room letter outside A–E, or an access code whose length differs from 10 characters
+- **WHEN** a tenant submits a room letter outside A–E, or a password shorter than 4 characters, longer than 64 characters, or containing non-alphanumeric characters
 - **THEN** the system rejects the login without revealing which field was wrong
+
+#### Scenario: Existing 10-character code remains usable
+- **WHEN** a room's stored password is a pre-existing 10-character alphanumeric code and the tenant submits that exact code
+- **THEN** the system accepts the login because 10 characters satisfies the 4–64 character policy
 
 ### Requirement: Access codes stored only as bcrypt hashes
 The system SHALL store access codes only as bcrypt hashes, and MUST NOT store any access code in plain text in the database, logs, or source control.
