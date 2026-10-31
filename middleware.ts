@@ -10,24 +10,35 @@ export async function middleware(request: NextRequest) {
   const claims = await readClaims(request);
 
   if (pathname.startsWith("/rooms")) {
-    if (claims?.role === "tenant") return NextResponse.next();
+    if (claims?.role === "tenant") return allow();
     return redirectTo(request, "/login");
   }
 
   if (pathname.startsWith("/admin")) {
-    if (pathname === "/admin/login") return NextResponse.next();
-    if (claims?.role === "admin") return NextResponse.next();
+    if (pathname === "/admin/login") return allow();
+    if (claims?.role === "admin") return allow();
     return redirectTo(request, "/admin/login");
   }
 
   return NextResponse.next();
 }
 
+function allow() {
+  return noStore(NextResponse.next());
+}
+
 function redirectTo(request: NextRequest, loginPath: string) {
   const url = request.nextUrl.clone();
   url.pathname = loginPath;
   url.search = "";
-  return NextResponse.redirect(url);
+  return noStore(NextResponse.redirect(url));
+}
+
+// Protected content must never be served from a cache after logout, including
+// on Back/reload navigations.
+function noStore(response: NextResponse) {
+  response.headers.set("Cache-Control", "no-store");
+  return response;
 }
 
 async function readClaims(request: NextRequest): Promise<SessionClaims | null> {

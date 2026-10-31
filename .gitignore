@@ -3,6 +3,10 @@ node_modules/
 .vercel/
 .next/
 *.tsbuildinfo
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
 
 # Keep the example env file tracked
 !.env.example

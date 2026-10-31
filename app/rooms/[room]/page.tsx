@@ -7,6 +7,7 @@ import {
 import { getSessionClaims } from "@/lib/session-cookies";
 import { getRoomSessionVersion } from "@/lib/session-version";
 import { ROOM_UPPER, parseRoomLetter } from "@/lib/rooms";
+import { logoutAction } from "@/app/logout-actions";
 
 export const instant = false;
 
@@ -34,6 +35,16 @@ export default async function RoomPage({ params }: { params: Promise<{ room: str
         <Link href="/" className="underline text-slate-300 hover:text-white">
           Back to your dashboard
         </Link>
+        {claims?.role === "tenant" ? (
+          <form action={logoutAction}>
+            <button
+              type="submit"
+              className="rounded border border-slate-500 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-slate-300"
+            >
+              Log out
+            </button>
+          </form>
+        ) : null}
       </main>
     );
   }
@@ -43,11 +54,21 @@ export default async function RoomPage({ params }: { params: Promise<{ room: str
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-10">
       <div className="mx-auto max-w-2xl space-y-8">
-        <header className="flex items-center justify-between">
+        <header className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-3xl font-semibold text-slate-900">Room {ROOM_UPPER[room]}</h1>
-          <p className="rounded-full bg-amber-200 px-3 py-1 text-xs font-medium text-amber-900">
-            Placeholder data - for demonstration only
-          </p>
+          <div className="flex items-center gap-3">
+            <p className="rounded-full bg-amber-200 px-3 py-1 text-xs font-medium text-amber-900">
+              Placeholder data - for demonstration only
+            </p>
+            <form action={logoutAction}>
+              <button
+                type="submit"
+                className="rounded border border-slate-500 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-slate-200 focus-visible:ring-2 focus-visible:ring-slate-700 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-100"
+              >
+                Log out
+              </button>
+            </form>
+          </div>
         </header>
 
         <section>
