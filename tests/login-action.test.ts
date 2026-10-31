@@ -36,8 +36,8 @@ vi.mock("@/lib/rate-limit", () => ({
   clearRateLimit: mocks.clearRateLimit,
 }));
 
-import { loginAction } from "@/app/login/actions";
-import { GENERIC_LOGIN_ERROR } from "@/app/login/login-state";
+import { loginAction } from "@/app/[lang]/login/actions";
+import { GENERIC_LOGIN_ERROR } from "@/app/[lang]/login/login-state";
 
 const REDIRECT = new Error("NEXT_REDIRECT");
 
@@ -62,7 +62,7 @@ beforeEach(() => {
 
 describe("loginAction rate limiting and session versioning", () => {
   it("limits by both client IP and room before checking the code", async () => {
-    await expect(loginAction({}, form("a", "0123456789"))).rejects.toBe(REDIRECT);
+    await expect(loginAction("zh-TW", {}, form("a", "0123456789"))).rejects.toBe(REDIRECT);
 
     expect(mocks.consumeAttempt).toHaveBeenCalledWith(expect.anything(), [
       "ip:203.0.113.9",
@@ -74,20 +74,42 @@ describe("loginAction rate limiting and session versioning", () => {
   });
 
   it("sets a tenant cookie carrying the current session version", async () => {
-    await expect(loginAction({}, form("a", "0123456789"))).rejects.toBe(REDIRECT);
+    await expect(loginAction("zh-TW", {}, form("a", "0123456789"))).rejects.toBe(REDIRECT);
 
     expect(mocks.getRoomSessionVersion).toHaveBeenCalledWith("a");
     expect(mocks.signTenantSession).toHaveBeenCalledWith("a", 4);
     expect(mocks.cookieSet).toHaveBeenCalledWith(
       expect.objectContaining({ name: "tp_session", value: "signed-token", httpOnly: true }),
     );
-    expect(mocks.redirect).toHaveBeenCalledWith("/rooms/a");
+    expect(mocks.redirect).toHaveBeenCalledWith("/zh-TW/rooms/a");
+  });
+
+  it("keeps the English locale on a successful sign-in", async () => {
+    await expect(loginAction("en", {}, form("a", "0123456789"))).rejects.toBe(REDIRECT);
+
+    expect(mocks.redirect).toHaveBeenCalledWith("/en/rooms/a");
+  });
+
+  it("falls back to zh-TW when the bound locale is tampered with", async () => {
+    await expect(
+      loginAction("https://evil.example", {}, form("a", "0123456789")),
+    ).rejects.toBe(REDIRECT);
+
+    expect(mocks.redirect).toHaveBeenCalledWith("/zh-TW/rooms/a");
+  });
+
+  it("returns a locale-independent error code", async () => {
+    mocks.verifyRoomCode.mockResolvedValue({ ok: false, reason: "incorrect_code" });
+
+    await expect(loginAction("en", {}, form("a", "9999999999"))).resolves.toEqual({
+      error: "invalid-credentials",
+    });
   });
 
   it("does not check the code when the rate limit is exhausted", async () => {
     mocks.consumeAttempt.mockResolvedValue({ allowed: false, retryAfterSeconds: 60 });
 
-    await expect(loginAction({}, form("a", "0123456789"))).resolves.toEqual({
+    await expect(loginAction("zh-TW", {}, form("a", "0123456789"))).resolves.toEqual({
       error: GENERIC_LOGIN_ERROR,
     });
     expect(mocks.verifyRoomCode).not.toHaveBeenCalled();
@@ -96,7 +118,7 @@ describe("loginAction rate limiting and session versioning", () => {
   it("fails closed with a generic error when the rate limiter is unavailable", async () => {
     mocks.consumeAttempt.mockRejectedValue(new Error("KV store is not configured"));
 
-    await expect(loginAction({}, form("a", "0123456789"))).resolves.toEqual({
+    await expect(loginAction("zh-TW", {}, form("a", "0123456789"))).resolves.toEqual({
       error: GENERIC_LOGIN_ERROR,
     });
     expect(mocks.verifyRoomCode).not.toHaveBeenCalled();
@@ -105,7 +127,7 @@ describe("loginAction rate limiting and session versioning", () => {
   it("does not clear the limiter or issue a cookie after a wrong code", async () => {
     mocks.verifyRoomCode.mockResolvedValue({ ok: false, reason: "incorrect_code" });
 
-    await expect(loginAction({}, form("a", "9999999999"))).resolves.toEqual({
+    await expect(loginAction("zh-TW", {}, form("a", "9999999999"))).resolves.toEqual({
       error: GENERIC_LOGIN_ERROR,
     });
     expect(mocks.clearRateLimit).not.toHaveBeenCalled();

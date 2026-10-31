@@ -14,7 +14,7 @@ vi.mock("next/headers", () => ({
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
-import { logoutAction } from "@/app/logout-actions";
+import { logoutAction } from "@/app/[lang]/logout-actions";
 import { signAdminSession, signTenantSession } from "@/lib/session";
 
 const SECRET = "logout-action-test-secret-0123456789abcdef";
@@ -49,35 +49,35 @@ describe("logoutAction", () => {
   it("clears the cookie and redirects a tenant to the tenant login", async () => {
     withCookie(await signTenantSession("a", 4));
 
-    await expect(logoutAction()).rejects.toBe(REDIRECT);
+    await expect(logoutAction("zh-TW")).rejects.toBe(REDIRECT);
 
     expect(mocks.cookieSet).toHaveBeenCalledWith("tp_session", "", clearingOptions);
-    expect(mocks.redirect).toHaveBeenCalledWith("/login");
+    expect(mocks.redirect).toHaveBeenCalledWith("/zh-TW/login");
   });
 
   it("clears the cookie and redirects an admin to the admin login", async () => {
     withCookie(await signAdminSession());
 
-    await expect(logoutAction()).rejects.toBe(REDIRECT);
+    await expect(logoutAction("zh-TW")).rejects.toBe(REDIRECT);
 
     expect(mocks.cookieSet).toHaveBeenCalledWith("tp_session", "", clearingOptions);
-    expect(mocks.redirect).toHaveBeenCalledWith("/admin/login");
+    expect(mocks.redirect).toHaveBeenCalledWith("/zh-TW/admin/login");
   });
 
   it("clears any cookie and redirects to the tenant login when no session exists", async () => {
-    await expect(logoutAction()).rejects.toBe(REDIRECT);
+    await expect(logoutAction("zh-TW")).rejects.toBe(REDIRECT);
 
     expect(mocks.cookieSet).toHaveBeenCalledWith("tp_session", "", clearingOptions);
-    expect(mocks.redirect).toHaveBeenCalledWith("/login");
+    expect(mocks.redirect).toHaveBeenCalledWith("/zh-TW/login");
   });
 
   it("treats a tampered token as unauthenticated and still clears the cookie", async () => {
     withCookie(`${await signTenantSession("a", 4)}tampered`);
 
-    await expect(logoutAction()).rejects.toBe(REDIRECT);
+    await expect(logoutAction("zh-TW")).rejects.toBe(REDIRECT);
 
     expect(mocks.cookieSet).toHaveBeenCalledWith("tp_session", "", clearingOptions);
-    expect(mocks.redirect).toHaveBeenCalledWith("/login");
+    expect(mocks.redirect).toHaveBeenCalledWith("/zh-TW/login");
   });
 
   it("treats an expired token as unauthenticated and still clears the cookie", async () => {
@@ -88,26 +88,51 @@ describe("logoutAction", () => {
       .sign(secret);
     withCookie(expired);
 
-    await expect(logoutAction()).rejects.toBe(REDIRECT);
+    await expect(logoutAction("zh-TW")).rejects.toBe(REDIRECT);
 
     expect(mocks.cookieSet).toHaveBeenCalledWith("tp_session", "", clearingOptions);
-    expect(mocks.redirect).toHaveBeenCalledWith("/login");
+    expect(mocks.redirect).toHaveBeenCalledWith("/zh-TW/login");
   });
 
   it("clears the cookie before throwing the redirect", async () => {
     withCookie(await signTenantSession("a", 4));
 
-    await expect(logoutAction()).rejects.toBe(REDIRECT);
+    await expect(logoutAction("zh-TW")).rejects.toBe(REDIRECT);
 
     expect(mocks.cookieSet.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.redirect.mock.invocationCallOrder[0],
     );
   });
 
-  it("takes no parameters and contains no client-input or room-state handling", () => {
-    const source = readFileSync(new URL("../app/logout-actions.ts", import.meta.url), "utf8");
+  it("keeps the English locale for tenants and admins", async () => {
+    withCookie(await signTenantSession("a", 4));
+    await expect(logoutAction("en")).rejects.toBe(REDIRECT);
+    expect(mocks.redirect).toHaveBeenCalledWith("/en/login");
 
-    expect(logoutAction.length).toBe(0);
+    mocks.redirect.mockClear();
+    withCookie(await signAdminSession());
+    await expect(logoutAction("en")).rejects.toBe(REDIRECT);
+    expect(mocks.redirect).toHaveBeenCalledWith("/en/admin/login");
+  });
+
+  it("falls back to zh-TW for crafted locale input", async () => {
+    withCookie(await signTenantSession("a", 4));
+
+    await expect(logoutAction("https://evil.example")).rejects.toBe(REDIRECT);
+    expect(mocks.redirect).toHaveBeenCalledWith("/zh-TW/login");
+
+    mocks.redirect.mockClear();
+    await expect(logoutAction("//evil.example")).rejects.toBe(REDIRECT);
+    expect(mocks.redirect).toHaveBeenCalledWith("/zh-TW/login");
+  });
+
+  it("only accepts a locale and contains no form, query, or room-state handling", () => {
+    const source = readFileSync(
+      new URL("../app/[lang]/logout-actions.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(logoutAction.length).toBe(1);
     expect(source).not.toMatch(/formData/);
     expect(source).not.toMatch(/searchParams/);
     expect(source).not.toMatch(/next=/);

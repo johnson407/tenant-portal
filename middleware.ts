@@ -1,23 +1,49 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { DEFAULT_LOCALE, isLocale, localePath, type Locale } from "@/lib/i18n/config";
 import { SESSION_COOKIE_NAME, verifySession, type SessionClaims } from "@/lib/session";
 
 export const config = {
-  matcher: ["/rooms/:path*", "/admin/:path*"],
+  // Match app routes, including bare paths that need a locale prefix, while
+  // skipping framework assets and dotted file paths.
+  matcher: ["/((?!_next|favicon.ico|.*\\..*).*)"],
 };
 
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-  const claims = await readClaims(request);
+type LocalizedPath = { locale: Locale; path: string };
 
-  if (pathname.startsWith("/rooms")) {
-    if (claims?.role === "tenant") return allow();
-    return redirectTo(request, "/login");
+function splitLocale(pathname: string): LocalizedPath | null {
+  const segments = pathname.split("/");
+  const first = segments[1] ?? "";
+  if (!isLocale(first)) return null;
+
+  const rest = segments.slice(2).join("/");
+  return { locale: first, path: rest ? `/${rest}` : "/" };
+}
+
+function isPathWithin(path: string, section: string): boolean {
+  return path === section || path.startsWith(`${section}/`);
+}
+
+export async function middleware(request: NextRequest) {
+  const localized = splitLocale(request.nextUrl.pathname);
+
+  if (!localized) {
+    const url = request.nextUrl.clone();
+    url.pathname = localePath(DEFAULT_LOCALE, request.nextUrl.pathname);
+    return NextResponse.redirect(url);
   }
 
-  if (pathname.startsWith("/admin")) {
-    if (pathname === "/admin/login") return allow();
+  const { locale, path } = localized;
+  const claims = await readClaims(request);
+
+  if (isPathWithin(path, "/rooms")) {
+    if (claims?.role === "tenant") return allow();
+    return redirectTo(request, localePath(locale, "/login"));
+  }
+
+  if (isPathWithin(path, "/admin")) {
+    if (path === "/admin/login") return allow();
     if (claims?.role === "admin") return allow();
-    return redirectTo(request, "/admin/login");
+    return redirectTo(request, localePath(locale, "/admin/login"));
   }
 
   return NextResponse.next();
@@ -27,9 +53,9 @@ function allow() {
   return noStore(NextResponse.next());
 }
 
-function redirectTo(request: NextRequest, loginPath: string) {
+function redirectTo(request: NextRequest, destination: string) {
   const url = request.nextUrl.clone();
-  url.pathname = loginPath;
+  url.pathname = destination;
   url.search = "";
   return noStore(NextResponse.redirect(url));
 }

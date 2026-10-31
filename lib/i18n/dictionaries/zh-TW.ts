@@ -1,0 +1,90 @@
+import type { Dictionary } from "../types";
+
+const zhTW: Dictionary = {
+  meta: {
+    siteName: "租客入口",
+    description: "查看租金帳單、付款與租約日期。",
+    homeTitle: "租客入口",
+    loginTitle: "租客登入",
+    adminTitle: "管理員 - 重設房間門禁碼",
+    adminLoginTitle: "管理員登入",
+  },
+  common: {
+    room: "房間",
+    sampleData: "範例資料",
+    logOut: "登出",
+    switchLocale: "English",
+    switchLocaleLabel: "以 English 檢視此頁面",
+  },
+  login: {
+    heading: "租客登入",
+    subtitle: "請選擇您的房間並輸入門禁碼。",
+    roomLabel: "房間",
+    codeLabel: "門禁碼",
+    codePlaceholder: "10 字元代碼",
+    checking: "檢查中...",
+    signIn: "登入",
+    landlordPrompt: "房東嗎？",
+    adminArea: "管理區",
+    errors: {
+      invalidCredentials: "房間或門禁碼不正確",
+    },
+  },
+  room: {
+    headingTemplate: "房間 {room}",
+    placeholderBadge: "範例資料 - 僅供示範",
+    bills: "帳單",
+    payments: "付款",
+    leaseDates: "租約日期",
+    sampleDataCaption: "（範例資料）",
+    due: "到期",
+    received: "已收款",
+    status: {
+      open: "未付款",
+      paid: "已付款",
+    },
+    labels: {
+      rentCurrentMonth: "本月租金",
+      utilities: "水電費",
+      rentPreviousMonth: "上月租金",
+    },
+    leaseStart: "租約開始",
+    leaseEnd: "租約結束",
+    renewalDue: "續約決定截止日",
+  },
+  denied: {
+    heading: "未獲授權",
+    message: "您無權檢視此房間的儀表板。",
+    backToDashboard: "返回您的儀表板",
+  },
+  adminLogin: {
+    heading: "管理員登入",
+    subtitle: "僅限房東存取。",
+    passwordLabel: "管理員密碼",
+    checking: "檢查中...",
+    signIn: "登入",
+    errors: {
+      accessDenied: "存取遭拒",
+    },
+  },
+  admin: {
+    heading: "房間門禁碼",
+    subtitle: "重設任何房間的門禁碼。新代碼只會顯示一次 - 離開此頁面前請先複製。",
+    roomLabel: "房間",
+    newCodeLabel: "新的 10 字元代碼（留空則自動產生）",
+    codePlaceholder: "例如 R3turnK3y55",
+    resetting: "重設中...",
+    resetCode: "重設代碼",
+    errors: {
+      accessDenied: "存取遭拒",
+      invalidRoom: "請選擇房間（A-E）。",
+    },
+    successTemplate: "房間 {room} 的門禁碼已重設。",
+    copy: "複製",
+    copied: "已複製",
+    warning: "此代碼只會顯示一次。之後只會以 bcrypt 雜湊形式儲存。",
+    resetAnother: "重設其他房間",
+  },
+};
+
+export default zhTW;

@@ -125,18 +125,18 @@ describe("tenant sign-in page", () => {
   });
 
   it("uses the accessible footer, link hover, and form-control classes", () => {
-    sourceHas("app/login/page.tsx", "text-xs text-slate-300");
-    sourceHas("app/login/page.tsx", "underline hover:text-white");
-    sourceLacks("app/login/page.tsx", "text-xs text-slate-500");
-    sourceLacks("app/login/page.tsx", "hover:text-slate-300");
+    sourceHas("app/[lang]/login/page.tsx", "text-xs text-slate-300");
+    sourceHas("app/[lang]/login/page.tsx", "underline hover:text-white");
+    sourceLacks("app/[lang]/login/page.tsx", "text-xs text-slate-500");
+    sourceLacks("app/[lang]/login/page.tsx", "hover:text-slate-300");
 
-    sourceHas("app/login/login-form.tsx", "focus:ring-2 focus:ring-slate-300");
-    sourceHas("app/login/login-form.tsx", "placeholder:text-slate-400");
-    sourceHas("app/login/login-form.tsx", "focus:border-slate-400");
-    sourceLacks("app/login/login-form.tsx", "focus:outline-none");
-    sourceLacks("app/login/login-form.tsx", "border-slate-700");
-    expect(sourceCount("app/login/login-form.tsx", "border border-slate-500")).toBe(2);
-    expect(sourceCount("app/login/login-form.tsx", "focus:ring-2 focus:ring-slate-300")).toBe(2);
+    sourceHas("app/[lang]/login/login-form.tsx", "focus:ring-2 focus:ring-slate-300");
+    sourceHas("app/[lang]/login/login-form.tsx", "placeholder:text-slate-400");
+    sourceHas("app/[lang]/login/login-form.tsx", "focus:border-slate-400");
+    sourceLacks("app/[lang]/login/login-form.tsx", "focus:outline-none");
+    sourceLacks("app/[lang]/login/login-form.tsx", "border-slate-700");
+    expect(sourceCount("app/[lang]/login/login-form.tsx", "border border-slate-500")).toBe(2);
+    expect(sourceCount("app/[lang]/login/login-form.tsx", "focus:ring-2 focus:ring-slate-300")).toBe(2);
   });
 });
 
@@ -176,7 +176,7 @@ describe("room dashboard", () => {
   });
 
   it("declares an explicit foreground on the page and each card", () => {
-    const file = "app/rooms/[room]/page.tsx";
+    const file = "app/[lang]/rooms/[room]/page.tsx";
 
     sourceHas(file, "min-h-screen bg-slate-100 px-4 py-10 text-slate-900");
     expect(
@@ -223,7 +223,7 @@ describe("admin sign-in page", () => {
   });
 
   it("uses the accessible password-input classes", () => {
-    const file = "app/admin/login/admin-login-form.tsx";
+    const file = "app/[lang]/admin/login/admin-login-form.tsx";
 
     sourceHas(file, "border border-slate-500");
     sourceHas(file, "focus:border-slate-400 focus:ring-2 focus:ring-slate-300");
@@ -266,7 +266,7 @@ describe("admin reset page", () => {
   });
 
   it("uses the accessible select and code-input classes", () => {
-    const file = "app/admin/reset-form.tsx";
+    const file = "app/[lang]/admin/reset-form.tsx";
 
     sourceHas(file, "border border-slate-500");
     sourceHas(file, "focus:border-slate-400 focus:ring-2 focus:ring-slate-300");
@@ -279,7 +279,7 @@ describe("admin reset page", () => {
   });
 
   it("leaves the reset-success panel colours unchanged", () => {
-    const file = "app/admin/reset-form.tsx";
+    const file = "app/[lang]/admin/reset-form.tsx";
 
     sourceHas(file, "rounded-lg border border-amber-500 bg-amber-50 p-6 text-slate-900");
     sourceHas(file, "text-sm font-medium text-red-700");

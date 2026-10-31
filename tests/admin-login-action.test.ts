@@ -23,8 +23,8 @@ vi.mock("@/lib/admin-auth", () => ({
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
-import { adminLoginAction } from "@/app/admin/login/actions";
-import { GENERIC_ADMIN_LOGIN_ERROR } from "@/app/admin/login-state";
+import { adminLoginAction } from "@/app/[lang]/admin/login/actions";
+import { GENERIC_ADMIN_LOGIN_ERROR } from "@/app/[lang]/admin/login-state";
 
 const REDIRECT = new Error("NEXT_REDIRECT");
 
@@ -47,7 +47,7 @@ beforeEach(() => {
 
 describe("adminLoginAction rate limiting", () => {
   it("consumes the IP-limited bucket before checking the password", async () => {
-    await expect(adminLoginAction({}, form("secret"))).rejects.toBe(REDIRECT);
+    await expect(adminLoginAction("zh-TW", {}, form("secret"))).rejects.toBe(REDIRECT);
 
     expect(mocks.consumeAttempt).toHaveBeenCalledWith(
       expect.objectContaining({ prefix: "ratelimit:admin-login" }),
@@ -61,7 +61,7 @@ describe("adminLoginAction rate limiting", () => {
   it("fails closed and does not check the password when the limiter is unavailable", async () => {
     mocks.consumeAttempt.mockRejectedValue(new Error("KV store is not configured"));
 
-    await expect(adminLoginAction({}, form("secret"))).resolves.toEqual({
+    await expect(adminLoginAction("zh-TW", {}, form("secret"))).resolves.toEqual({
       error: GENERIC_ADMIN_LOGIN_ERROR,
     });
     expect(mocks.adminPasswordMatches).not.toHaveBeenCalled();
@@ -71,20 +71,42 @@ describe("adminLoginAction rate limiting", () => {
   it("does not check the password when the bucket is exhausted", async () => {
     mocks.consumeAttempt.mockResolvedValue({ allowed: false, retryAfterSeconds: 60 });
 
-    await expect(adminLoginAction({}, form("secret"))).resolves.toEqual({
+    await expect(adminLoginAction("zh-TW", {}, form("secret"))).resolves.toEqual({
       error: GENERIC_ADMIN_LOGIN_ERROR,
     });
     expect(mocks.adminPasswordMatches).not.toHaveBeenCalled();
   });
 
   it("clears the limiter and establishes a session after a correct password", async () => {
-    await expect(adminLoginAction({}, form("secret"))).rejects.toBe(REDIRECT);
+    await expect(adminLoginAction("zh-TW", {}, form("secret"))).rejects.toBe(REDIRECT);
 
     expect(mocks.clearRateLimit).toHaveBeenCalledWith(
       expect.objectContaining({ prefix: "ratelimit:admin-login" }),
       ["ip:203.0.113.9"],
     );
     expect(mocks.establishAdminSession).toHaveBeenCalled();
-    expect(mocks.redirect).toHaveBeenCalledWith("/admin");
+    expect(mocks.redirect).toHaveBeenCalledWith("/zh-TW/admin");
+  });
+
+  it("keeps the English locale on a successful sign-in", async () => {
+    await expect(adminLoginAction("en", {}, form("secret"))).rejects.toBe(REDIRECT);
+
+    expect(mocks.redirect).toHaveBeenCalledWith("/en/admin");
+  });
+
+  it("falls back to zh-TW when the bound locale is crafted", async () => {
+    await expect(
+      adminLoginAction("//evil.example", {}, form("secret")),
+    ).rejects.toBe(REDIRECT);
+
+    expect(mocks.redirect).toHaveBeenCalledWith("/zh-TW/admin");
+  });
+
+  it("returns a locale-independent access-denied code", async () => {
+    mocks.adminPasswordMatches.mockReturnValue(false);
+
+    await expect(adminLoginAction("en", {}, form("wrong"))).resolves.toEqual({
+      error: "access-denied",
+    });
   });
 });

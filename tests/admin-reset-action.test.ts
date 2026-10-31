@@ -37,8 +37,8 @@ vi.mock("bcryptjs", () => ({
   default: { hash: mocks.hash },
 }));
 
-import { resetRoomCodeAction } from "@/app/admin/actions";
-import { GENERIC_ADMIN_RESET_ERROR } from "@/app/admin/login-state";
+import { resetRoomCodeAction } from "@/app/[lang]/admin/actions";
+import { GENERIC_ADMIN_RESET_ERROR } from "@/app/[lang]/admin/login-state";
 
 function form(room: string, code: string): FormData {
   const data = new FormData();
@@ -58,10 +58,24 @@ beforeEach(() => {
 });
 
 describe("resetRoomCodeAction authorization", () => {
+  it("returns a locale-independent invalid-room code without writing", async () => {
+    const result = await resetRoomCodeAction("en", { status: "idle" }, form("z", "ABCDEFGHIJ"));
+
+    expect(result).toEqual({ status: "error", message: "invalid-room" });
+    expect(mocks.hash).not.toHaveBeenCalled();
+    expect(mocks.setStoredHash).not.toHaveBeenCalled();
+  });
+
+  it("accepts a valid locale on a successful reset", async () => {
+    const result = await resetRoomCodeAction("en", { status: "idle" }, form("b", "ABCDEFGHIJ"));
+
+    expect(result).toEqual({ status: "success", room: "b", code: "ABCDEFGHIJ" });
+  });
+
   it("rejects a tenant session without changing the stored hash or session version", async () => {
     mocks.getSessionClaims.mockResolvedValue({ role: "tenant", room: "a", v: 0, exp: 1 });
 
-    const result = await resetRoomCodeAction({ status: "idle" }, form("b", "ABCDEFGHIJ"));
+    const result = await resetRoomCodeAction("zh-TW", { status: "idle" }, form("b", "ABCDEFGHIJ"));
 
     expect(result).toEqual({ status: "error", message: GENERIC_ADMIN_RESET_ERROR });
     expect(mocks.hash).not.toHaveBeenCalled();
@@ -72,7 +86,7 @@ describe("resetRoomCodeAction authorization", () => {
   it("rejects an anonymous caller without changing the stored hash or session version", async () => {
     mocks.getSessionClaims.mockResolvedValue(null);
 
-    const result = await resetRoomCodeAction({ status: "idle" }, form("b", "ABCDEFGHIJ"));
+    const result = await resetRoomCodeAction("zh-TW", { status: "idle" }, form("b", "ABCDEFGHIJ"));
 
     expect(result).toEqual({ status: "error", message: GENERIC_ADMIN_RESET_ERROR });
     expect(mocks.setStoredHash).not.toHaveBeenCalled();
@@ -80,7 +94,7 @@ describe("resetRoomCodeAction authorization", () => {
   });
 
   it("resets the code and revokes existing tenant sessions for that room", async () => {
-    const result = await resetRoomCodeAction({ status: "idle" }, form("b", "ABCDEFGHIJ"));
+    const result = await resetRoomCodeAction("zh-TW", { status: "idle" }, form("b", "ABCDEFGHIJ"));
 
     expect(result).toEqual({ status: "success", room: "b", code: "ABCDEFGHIJ" });
     expect(mocks.setStoredHash).toHaveBeenCalledWith("b", "bcrypt-hash");
@@ -90,7 +104,7 @@ describe("resetRoomCodeAction authorization", () => {
   it("returns a generic error and no plaintext if the KV write fails", async () => {
     mocks.setStoredHash.mockRejectedValue(new Error("kv down"));
 
-    const result = await resetRoomCodeAction({ status: "idle" }, form("b", "ABCDEFGHIJ"));
+    const result = await resetRoomCodeAction("zh-TW", { status: "idle" }, form("b", "ABCDEFGHIJ"));
 
     expect(result).toEqual({ status: "error", message: GENERIC_ADMIN_RESET_ERROR });
   });

@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Tenant Portal
 
-Next.js 16 App Router app: rooms A–E sign in with a 10-character code and see placeholder bills, payments, and lease dates; an admin resets room codes. No database and no tenant PII.
+Next.js 16 App Router app: rooms A–E sign in with a 10-character code and see placeholder bills, payments, and lease dates; an admin resets room codes. The UI is locale-prefixed (`zh-TW` by default, `en` optional). No database and no tenant PII.
 
 ## Commands
 
@@ -34,8 +34,10 @@ Next.js 16 App Router app: rooms A–E sign in with a 10-character code and see 
 
 ## Architecture
 
+- Every page lives under `app/[lang]/`, with `zh-TW` (default) and `en` selected by the first URL segment. Typed dictionaries, locale helpers, and `Intl` formatting are in `lib/i18n/`; set page copy from the dictionary rather than hard-coding English.
+- Bare paths redirect to the default locale (for example `/login` → `/zh-TW/login`). Auth redirects stay in the active locale (`/{locale}/login`, `/{locale}/admin/login`), and locale values received by Server Actions are validated with `isLocale()` before being used as a path prefix.
 - Auth is a stateless HS256 JWT in the `tp_session` cookie (`lib/session.ts`), valid for 7 days with `httpOnly`/`SameSite=Lax`. Cookie helpers live in `lib/session-cookies.ts`.
-- `middleware.ts` guards `/rooms/*` and `/admin/*`, and pages re-check: room match plus Redis session version for tenants, `isAdminSession()` for admin. Admin auth compares the shared `ADMIN_PASSWORD` env value; there are no user accounts.
+- `middleware.ts` normalizes the locale and guards `/{locale}/rooms/*` and `/{locale}/admin/*`, and pages re-check: room match plus Redis session version for tenants, `isAdminSession()` for admin. Admin auth compares the shared `ADMIN_PASSWORD` env value; there are no user accounts.
 - An admin code reset bumps `room:<letter>:session-version`, invalidating that room's existing sessions. Logout deliberately does not bump it; logout is browser-local.
 - Redis also holds rate-limit counters with escalating lockouts. If Redis is unavailable, fail with a generic error rather than bypassing the check.
 - Server Actions live in `app/**/actions.ts` and are POST-only. Forms needing pending/error state use client components with `useActionState`; logout uses plain server-rendered forms.
@@ -45,7 +47,7 @@ Next.js 16 App Router app: rooms A–E sign in with a 10-character code and see 
 ## Testing
 
 - Vitest runs in a node environment with the `@` alias mapped to the repo root, and includes only `tests/**/*.test.ts`.
-- Follow the existing pattern: `vi.hoisted` plus `vi.mock` for `next/headers`, `next/navigation`, and lib modules; see `tests/login-action.test.ts`.
+- Follow the existing pattern: `vi.hoisted` plus `vi.mock` for `next/headers`, `next/navigation`, and lib modules; see `tests/login-action.test.ts`. Page tests pass `params` with the locale, for example `Promise.resolve({ lang: "zh-TW", room: "a" })`.
 - Browser/HTTP checks are local-only and separate: `e2e/logout.spec.ts` and `scripts/logout-e2e.mjs`. They need real Redis and env values and are not part of `npm test`.
 - If Playwright cannot install system libraries without sudo, extract `libnspr4`, `libnss3`, and `libasound2t64` locally and run with `LD_LIBRARY_PATH` set.
 

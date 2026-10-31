@@ -2,6 +2,10 @@
 
 Room-number login (A-E plus a code). No tenant personal info stored.
 
+The portal is locale-prefixed: Traditional Chinese (`/zh-TW/...`) is the
+default and English (`/en/...`) is also available. Bare paths such as `/login`
+redirect to the default locale. UI copy and formatting live in `lib/i18n/`.
+
 ## Local development
 
 ```bash

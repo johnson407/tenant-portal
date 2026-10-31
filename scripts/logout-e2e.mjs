@@ -171,17 +171,17 @@ async function submit(path, fields, jar) {
 }
 
 async function login(jar, room, code) {
-  const page = await get(jar, "/login");
+  const page = await get(jar, "/en/login");
   const form = formContaining(await page.text(), 'name="room"');
   const fields = [...hiddenFields(form), ["room", room], ["code", code]];
-  return submit("/login", fields, jar);
+  return submit("/en/login", fields, jar);
 }
 
 async function loginAdmin(jar) {
-  const page = await get(jar, "/admin/login");
+  const page = await get(jar, "/en/admin/login");
   const form = formContaining(await page.text(), 'name="password"');
   const fields = [...hiddenFields(form), ["password", adminPassword]];
-  return submit("/admin/login", fields, jar);
+  return submit("/en/admin/login", fields, jar);
 }
 
 function locationOf(response) {
@@ -201,12 +201,29 @@ const tenantJar = new CookieJar();
 
 await waitForServer();
 
+// Locale routing smoke checks: bare paths default to zh-TW, /en is explicit.
+let localeResponse = await fetch(`${base}/login`, { redirect: "manual" });
+check(
+  "bare /login redirects to the default locale",
+  localeResponse.status === 307 && locationOf(localeResponse) === "/zh-TW/login",
+);
+localeResponse = await fetch(`${base}/zh-TW/login`, { redirect: "manual" });
+check(
+  "zh-TW login renders Traditional Chinese",
+  localeResponse.status === 200 && (await localeResponse.text()).includes("租客登入"),
+);
+localeResponse = await fetch(`${base}/en/login`, { redirect: "manual" });
+check(
+  "en login renders English",
+  localeResponse.status === 200 && (await localeResponse.text()).includes("Tenant sign in"),
+);
+
 // Tenant A signs in and sees the control.
 let response = await login(tenantJar, "a", roomACode);
-check("tenant A login redirects to /rooms/a", response.status === 303 && locationOf(response) === "/rooms/a");
+check("tenant A login redirects to /rooms/a", response.status === 303 && locationOf(response) === "/en/rooms/a");
 check("tenant A receives a session cookie", tenantJar.has("tp_session"));
 
-response = await get(tenantJar, "/rooms/a");
+response = await get(tenantJar, "/en/rooms/a");
 let html = await response.text();
 check("tenant A dashboard is served", response.status === 200 && !html.includes("Not authorized"));
 check("authorized dashboard renders Log out", html.includes("Log out"));
@@ -223,9 +240,9 @@ check("pre-logout tenant token was captured", Boolean(preLogoutToken));
 
 // Tenant A logs out.
 let fields = hiddenFields(formContaining(html, "Log out"));
-response = await submit("/rooms/a", fields, tenantJar);
+response = await submit("/en/rooms/a", fields, tenantJar);
 let setCookie = response.headers.getSetCookie?.().join("\n") ?? response.headers.get("set-cookie") ?? "";
-check("tenant logout redirects to /login", response.status === 303 && locationOf(response) === "/login");
+check("tenant logout redirects to /login", response.status === 303 && locationOf(response) === "/en/login");
 if (!setCookie.includes("tp_session=")) throw new Error("Logout response did not set tp_session");
 assertExpiry(setCookie, "tenant logout");
 check("tenant cookie was removed from the browser", !tenantJar.has("tp_session"));
@@ -234,10 +251,10 @@ check(
   (response.headers.get("cache-control") ?? "").includes("no-store"),
 );
 
-response = await get(tenantJar, "/rooms/a");
+response = await get(tenantJar, "/en/rooms/a");
 check(
   "room page redirects to /login after logout",
-  response.status === 307 && locationOf(response) === "/login",
+  response.status === 307 && locationOf(response) === "/en/login",
 );
 
 const versionAfter = await kvGet("room:a:session-version");
@@ -255,7 +272,7 @@ check(
 // A token copied before logout stays valid: logout is browser-local.
 const copiedJar = new CookieJar();
 copiedJar.set("tp_session", preLogoutToken);
-response = await get(copiedJar, "/rooms/a");
+response = await get(copiedJar, "/en/rooms/a");
 html = await response.text();
 check(
   "a copied pre-logout token still reaches /rooms/a",
@@ -265,21 +282,21 @@ check(
 // Admin signs in and logs out.
 const adminJar = new CookieJar();
 response = await loginAdmin(adminJar);
-check("admin login redirects to /admin", response.status === 303 && locationOf(response) === "/admin");
+check("admin login redirects to /admin", response.status === 303 && locationOf(response) === "/en/admin");
 check("admin receives a session cookie", adminJar.has("tp_session"));
 
-response = await get(adminJar, "/admin");
+response = await get(adminJar, "/en/admin");
 html = await response.text();
 check("admin page is served", response.status === 200);
 check("admin page renders heading and Log out", html.includes("Room access codes") && html.includes("Log out"));
 check("admin page is not cacheable", (response.headers.get("cache-control") ?? "").includes("no-store"));
 
 fields = hiddenFields(formContaining(html, "Log out"));
-response = await submit("/admin", fields, adminJar);
+response = await submit("/en/admin", fields, adminJar);
 setCookie = response.headers.getSetCookie?.().join("\n") ?? response.headers.get("set-cookie") ?? "";
 check(
   "admin logout redirects to /admin/login",
-  response.status === 303 && locationOf(response) === "/admin/login",
+  response.status === 303 && locationOf(response) === "/en/admin/login",
 );
 assertExpiry(setCookie, "admin logout");
 check("admin cookie was removed from the browser", !adminJar.has("tp_session"));
@@ -288,34 +305,34 @@ check(
   (response.headers.get("cache-control") ?? "").includes("no-store"),
 );
 
-response = await get(adminJar, "/admin");
+response = await get(adminJar, "/en/admin");
 check(
   "admin page redirects to /admin/login after logout",
-  response.status === 307 && locationOf(response) === "/admin/login",
+  response.status === 307 && locationOf(response) === "/en/admin/login",
 );
 
 // Room B signs in on the same browser after room A logged out.
 response = await login(tenantJar, "b", roomBCode);
-check("room B login redirects to /rooms/b", response.status === 303 && locationOf(response) === "/rooms/b");
+check("room B login redirects to /rooms/b", response.status === 303 && locationOf(response) === "/en/rooms/b");
 check("room B receives a fresh session cookie", tenantJar.has("tp_session"));
 
-response = await get(tenantJar, "/rooms/b");
+response = await get(tenantJar, "/en/rooms/b");
 html = await response.text();
 check("room B dashboard is served", response.status === 200 && !html.includes("Not authorized"));
 check("room B dashboard shows room B data only", html.includes("$700.00") && !html.includes("$750.00"));
 
-response = await get(tenantJar, "/rooms/a");
+response = await get(tenantJar, "/en/rooms/a");
 html = await response.text();
 check(
   "room B cannot view room A",
   html.includes("Not authorized") && !html.includes("$750.00"),
 );
 
-// GET /logout is not a route and must not clear the current cookie.
-const logoutGet = await get(tenantJar, "/logout");
+// GET /en/logout is not a route and must not clear the current cookie.
+const logoutGet = await get(tenantJar, "/en/logout");
 const logoutGetCookie = logoutGet.headers.getSetCookie?.().join("\n") ?? logoutGet.headers.get("set-cookie") ?? "";
-check("GET /logout returns 404", logoutGet.status === 404);
-check("GET /logout does not clear tp_session", !logoutGetCookie.includes("tp_session="));
-check("GET /logout leaves the room B session intact", tenantJar.has("tp_session"));
+check("GET /en/logout returns 404", logoutGet.status === 404);
+check("GET /en/logout does not clear tp_session", !logoutGetCookie.includes("tp_session="));
+check("GET /en/logout leaves the room B session intact", tenantJar.has("tp_session"));
 
 console.log(`\nLogout E2E passed: ${checks} checks.`);
