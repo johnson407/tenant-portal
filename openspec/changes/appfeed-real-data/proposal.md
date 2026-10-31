@@ -72,6 +72,19 @@ One row per room. Duplicate room rows are invalid.
 
 ## Open decisions for Johnson
 
+> **Resolved 2026-10-31 (Asia/Taipei): Johnson approved all recommended defaults.**
+> 1. Service account (Option A); no CSV fallback.
+> 2. AppFeed now exists: spreadsheetId `1kETMfVU22AuWCteIEFlTW1DhoQqBLompB2MGgPfv1ng`, title `AppFeed`, tabs `Bills` and `Leases`, header rows written exactly as specified; data rows empty.
+> 3. Manual, values-only row entry in v1; no formulas referencing the main rent file.
+> 4. Hand-kept `paid_on` column is the only payment-status source; no mark-paid UI.
+> 5. 15-minute revalidate, stale served up to 1 hour with last-updated time, then unavailable; no admin refresh button in v1.
+> 6. A bad row fails the whole room closed; other rooms unaffected.
+> 7. Delete placeholder data; no dev-only switch.
+> 8. 12 most recent payments, newest first; no deposit.
+> 9. Vercel Hobby non-commercial question remains noted, not blocking; revisit before charging rent through the portal.
+>
+> Still pending (Johnson): service-account creation and sharing AppFeed with it as Viewer (tasks 0.3, 0.4).
+
 1. **Authentication method: service account vs published CSV.**
    - Options: A, service account (recommended); B, publish-to-web CSV.
    - Recommended default: A.
