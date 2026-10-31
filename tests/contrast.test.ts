@@ -190,7 +190,7 @@ describe("room dashboard", () => {
     sourceHas(file, "rounded border border-slate-300 bg-white p-6 text-slate-900");
 
     sourceLacks(file, "text-sm font-normal text-slate-700");
-    expect(sourceCount(file, "text-xs text-slate-700")).toBe(5);
+    expect(sourceCount(file, "text-xs text-slate-700")).toBe(9);
     sourceLacks(file, "text-slate-500");
     sourceLacks(file, "border-slate-200");
     sourceLacks(file, "divide-slate-200");
@@ -287,6 +287,21 @@ describe("admin reset page", () => {
     sourceHas(file, "text-sm font-medium text-red-700");
     sourceHas(file, "text-sm text-slate-600 underline hover:text-slate-900");
     sourceHas(file, "rounded bg-slate-900 px-3 py-2 text-sm text-white");
+  });
+
+  it("uses the accessible bank form classes", () => {
+    const file = "app/[lang]/admin/bank-form.tsx";
+
+    sourceHas(file, "border border-slate-500");
+    sourceHas(file, "focus:border-slate-400 focus:ring-2 focus:ring-slate-300");
+    sourceHas(file, "placeholder:text-slate-400");
+    sourceHas(file, "text-sm text-emerald-400");
+    sourceHas(file, "text-sm text-red-400");
+    sourceLacks(file, "focus:outline-none");
+    sourceLacks(file, "border-slate-700");
+    expect(sourceCount(file, "border border-slate-500")).toBe(1);
+    expect(sourceCount(file, "text-sm text-slate-300")).toBe(4);
+    expect(sourceCount(file, "text-xs text-slate-400")).toBe(2);
   });
 });
 

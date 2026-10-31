@@ -6,7 +6,7 @@ const zhTW: Dictionary = {
     description: "查看租金帳單、付款與租約日期。",
     homeTitle: "租客入口",
     loginTitle: "租客登入",
-    adminTitle: "管理員 - 重設房間門禁碼",
+    adminTitle: "管理員",
     adminLoginTitle: "管理員登入",
   },
   common: {
@@ -55,6 +55,13 @@ const zhTW: Dictionary = {
     leaseStart: "租約開始",
     leaseEnd: "租約結束",
     renewalDue: "續約決定截止日",
+    bankAccount: {
+      heading: "租金匯款帳戶",
+      bankName: "銀行",
+      recipientName: "受款人",
+      bankCode: "銀行代號",
+      accountNo: "帳號",
+    },
   },
   denied: {
     heading: "未獲授權",
@@ -72,8 +79,9 @@ const zhTW: Dictionary = {
     },
   },
   admin: {
-    heading: "房間門禁碼",
-    subtitle: "重設任何房間的門禁碼。新代碼只會顯示一次 - 離開此頁面前請先複製。",
+    heading: "管理後台",
+    subtitle: "重設房間門禁碼，並維護租客看到的租金匯款帳戶。",
+    resetSectionHeading: "房間門禁碼",
     roomLabel: "房間",
     newCodeLabel: "新的 10 字元代碼（留空則自動產生）",
     codePlaceholder: "例如 R3turnK3y55",
@@ -88,6 +96,27 @@ const zhTW: Dictionary = {
     copied: "已複製",
     warning: "此代碼只會顯示一次。之後只會以 bcrypt 雜湊形式儲存。",
     resetAnother: "重設其他房間",
+    bank: {
+      sectionHeading: "租金匯款帳戶",
+      bankName: "銀行名稱",
+      recipientName: "受款人姓名",
+      bankCode: "銀行代號",
+      accountNo: "帳號",
+      bankNamePlaceholder: "例如 玉山銀行",
+      recipientNamePlaceholder: "例如 王小明",
+      bankCodePlaceholder: "例如 808",
+      accountNoPlaceholder: "例如 0123456789012",
+      bankCodeHint: "僅限數字，3 至 7 碼。",
+      accountNoHint: "僅限數字，6 至 20 碼。",
+      save: "儲存銀行帳戶",
+      saving: "儲存中...",
+      saved: "銀行帳戶已儲存。",
+      unavailable: "銀行帳戶資料暫時無法取得，請稍後再試。",
+      errors: {
+        invalid: "請確認銀行資料後再試。",
+        generic: "無法儲存銀行帳戶，請再試一次。",
+      },
+    },
   },
 };
 

@@ -56,6 +56,22 @@ describe("local KV mock", () => {
     expect(await send(["get", "short"])).toEqual({ result: null });
   });
 
+  it("supports hash writes and reads", async () => {
+    expect(await send(["hset", "bank:account", "bankName", "玉山銀行", "bankCode", "808"])).toEqual({
+      result: 2,
+    });
+    expect(await send(["hgetall", "bank:account"])).toEqual({
+      result: ["bankName", "玉山銀行", "bankCode", "808"],
+    });
+    expect(await send(["hset", "bank:account", "bankName", "國泰世華"])).toEqual({ result: 0 });
+    expect(await send(["hgetall", "bank:account"])).toEqual({
+      result: ["bankName", "國泰世華", "bankCode", "808"],
+    });
+    expect(await send(["hgetall", "missing:hash"])).toEqual({ result: [] });
+    expect(await send(["del", "bank:account"])).toEqual({ result: 1 });
+    expect(await send(["hgetall", "bank:account"])).toEqual({ result: [] });
+  });
+
   it("rejects unsupported commands", async () => {
     const response = await fetch(baseUrl, {
       method: "POST",

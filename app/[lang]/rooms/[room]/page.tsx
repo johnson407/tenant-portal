@@ -5,6 +5,7 @@ import LocaleSwitcher from "@/app/[lang]/locale-switcher";
 import { logoutAction } from "@/app/[lang]/logout-actions";
 import { getRoomFeed } from "@/lib/appfeed/feed";
 import type { FeedResult } from "@/lib/appfeed/types";
+import { type BankAccount, getBankAccount } from "@/lib/bank-account";
 import { getDictionary, isLocale, localePath } from "@/lib/i18n";
 import { formatDate, formatDateTime, formatTwd } from "@/lib/i18n/format";
 import { getSessionClaims } from "@/lib/session-cookies";
@@ -82,6 +83,13 @@ export default async function RoomPage({ params }: RoomPageProps) {
 
   const feed = result.kind === "ok" ? result.feed : null;
 
+  let bankAccount: BankAccount | null = null;
+  try {
+    bankAccount = await getBankAccount();
+  } catch {
+    bankAccount = null;
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-10 text-slate-900">
       <div className="mx-auto max-w-2xl space-y-8">
@@ -101,6 +109,40 @@ export default async function RoomPage({ params }: RoomPageProps) {
             </form>
           </div>
         </header>
+
+        {bankAccount === null ? null : (
+          <section>
+            <h2 className="text-xl font-medium text-slate-800">
+              {dictionary.room.bankAccount.heading}
+            </h2>
+            <dl className="mt-2 grid grid-cols-1 gap-2 rounded border border-slate-300 bg-white p-4 text-slate-900 sm:grid-cols-2">
+              <div>
+                <dt className="text-xs text-slate-700">
+                  {dictionary.room.bankAccount.bankName}
+                </dt>
+                <dd className="text-sm">{bankAccount.bankName}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-700">
+                  {dictionary.room.bankAccount.recipientName}
+                </dt>
+                <dd className="text-sm">{bankAccount.recipientName}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-700">
+                  {dictionary.room.bankAccount.bankCode}
+                </dt>
+                <dd className="font-mono text-sm">{bankAccount.bankCode}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-700">
+                  {dictionary.room.bankAccount.accountNo}
+                </dt>
+                <dd className="font-mono text-sm break-all">{bankAccount.accountNo}</dd>
+              </div>
+            </dl>
+          </section>
+        )}
 
         {feed === null ? (
           <section className="rounded border border-slate-300 bg-white p-6 text-slate-900">

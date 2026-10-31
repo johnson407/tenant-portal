@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getSessionClaims: vi.fn(),
   getRoomSessionVersion: vi.fn(),
   getRoomFeed: vi.fn(),
+  getBankAccount: vi.fn(),
 }));
 
 vi.mock("@/lib/session-cookies", () => ({
@@ -20,11 +21,15 @@ vi.mock("@/lib/appfeed/feed", () => ({
   getRoomFeed: mocks.getRoomFeed,
 }));
 
+vi.mock("@/lib/bank-account", () => ({
+  getBankAccount: mocks.getBankAccount,
+}));
+
 vi.mock("@/app/[lang]/logout-actions", () => ({
   logoutAction: vi.fn(),
 }));
 
-import RoomPage from "@/app/[lang]/rooms/[room]/page";
+import RoomPage, { generateMetadata } from "@/app/[lang]/rooms/[room]/page";
 
 const FEED_A: RoomFeed = {
   room: "a",
@@ -85,6 +90,7 @@ beforeEach(() => {
   mocks.getSessionClaims.mockReset();
   mocks.getRoomSessionVersion.mockReset();
   mocks.getRoomFeed.mockReset();
+  mocks.getBankAccount.mockReset();
 
   mocks.getSessionClaims.mockResolvedValue({
     role: "tenant",
@@ -94,6 +100,7 @@ beforeEach(() => {
   });
   mocks.getRoomSessionVersion.mockResolvedValue(4);
   mocks.getRoomFeed.mockResolvedValue({ kind: "ok", feed: FEED_A });
+  mocks.getBankAccount.mockResolvedValue(null);
 });
 
 describe("room dashboard authorization", () => {
@@ -249,8 +256,87 @@ describe("room dashboard states", () => {
   });
 });
 
+const BANK = {
+  bankName: "玉山銀行",
+  recipientName: "王小明",
+  bankCode: "808",
+  accountNo: "0123456789012",
+};
+
+describe("room dashboard bank account", () => {
+  it("shows all four values in the active locale", async () => {
+    mocks.getBankAccount.mockResolvedValue(BANK);
+
+    const zh = await renderRoom("a");
+    const en = await renderRoom("a", "en");
+
+    expect(zh).toContain("租金匯款帳戶");
+    expect(zh).toContain("玉山銀行");
+    expect(zh).toContain("王小明");
+    expect(zh).toContain("808");
+    expect(zh).toContain("0123456789012");
+    expect(zh).toMatch(/租金匯款帳戶[\s\S]*玉山銀行[\s\S]*0123456789012/);
+
+    expect(en).toContain("Rent bank account");
+    expect(en).toContain("Bank");
+    expect(en).toContain("Recipient");
+    expect(en).toContain("Bank code");
+    expect(en).toContain("Account number");
+    expect(en).toContain("0123456789012");
+  });
+
+  it("still shows bank details when AppFeed is unavailable", async () => {
+    mocks.getRoomFeed.mockResolvedValue({ kind: "unavailable" });
+    mocks.getBankAccount.mockResolvedValue(BANK);
+
+    const html = await renderRoom("a");
+
+    expect(html).toContain("資料暫時無法取得");
+    expect(html).toContain("租金匯款帳戶");
+    expect(html).toContain("0123456789012");
+  });
+
+  it("omits the section entirely when no record exists", async () => {
+    const html = await renderRoom("a");
+
+    expect(html).not.toContain("租金匯款帳戶");
+    expect(html).not.toContain(BANK.recipientName);
+    expect(html).not.toContain(BANK.accountNo);
+  });
+
+  it("hides only the bank section when the read fails", async () => {
+    mocks.getBankAccount.mockRejectedValue(new Error("kv secret"));
+
+    const html = await renderRoom("a");
+
+    expect(html).toContain("帳單");
+    expect(html).toContain("付款");
+    expect(html).toContain("租約日期");
+    expect(html).not.toContain("租金匯款帳戶");
+    expect(html).not.toContain("kv secret");
+  });
+});
+
+describe("room dashboard metadata", () => {
+  it("does not include bank details in page metadata", async () => {
+    mocks.getBankAccount.mockResolvedValue(BANK);
+
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ lang: "zh-TW", room: "a" }),
+    });
+
+    const serialized = JSON.stringify(metadata);
+    expect(serialized).not.toContain(BANK.recipientName);
+    expect(serialized).not.toContain(BANK.bankCode);
+    expect(serialized).not.toContain(BANK.accountNo);
+    expect(mocks.getBankAccount).not.toHaveBeenCalled();
+  });
+});
+
 describe("room dashboard denial", () => {
   it("denies a tenant requesting another room without loading that room", async () => {
+    mocks.getBankAccount.mockResolvedValue(BANK);
+
     const html = await renderRoom("b");
 
     expect(html).toContain("未獲授權");
@@ -259,7 +345,11 @@ describe("room dashboard denial", () => {
     expect(html).toContain('href="/zh-TW"');
     expect(html).not.toContain("房間 B");
     expect(html).not.toContain("70000");
+    expect(html).not.toContain(BANK.recipientName);
+    expect(html).not.toContain(BANK.accountNo);
+    expect(html).not.toContain("租金匯款帳戶");
     expect(mocks.getRoomFeed).not.toHaveBeenCalled();
+    expect(mocks.getBankAccount).not.toHaveBeenCalled();
   });
 
   it("denies a tenant whose code was reset after the session was issued", async () => {

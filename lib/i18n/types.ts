@@ -53,6 +53,13 @@ export type Dictionary = {
     leaseStart: string;
     leaseEnd: string;
     renewalDue: string;
+    bankAccount: {
+      heading: string;
+      bankName: string;
+      recipientName: string;
+      bankCode: string;
+      accountNo: string;
+    };
   };
   denied: {
     heading: string;
@@ -72,6 +79,7 @@ export type Dictionary = {
   admin: {
     heading: string;
     subtitle: string;
+    resetSectionHeading: string;
     roomLabel: string;
     newCodeLabel: string;
     codePlaceholder: string;
@@ -86,5 +94,26 @@ export type Dictionary = {
     copied: string;
     warning: string;
     resetAnother: string;
+    bank: {
+      sectionHeading: string;
+      bankName: string;
+      recipientName: string;
+      bankCode: string;
+      accountNo: string;
+      bankNamePlaceholder: string;
+      recipientNamePlaceholder: string;
+      bankCodePlaceholder: string;
+      accountNoPlaceholder: string;
+      bankCodeHint: string;
+      accountNoHint: string;
+      save: string;
+      saving: string;
+      saved: string;
+      unavailable: string;
+      errors: {
+        invalid: string;
+        generic: string;
+      };
+    };
   };
 };

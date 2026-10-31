@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import LocaleSwitcher from "@/app/[lang]/locale-switcher";
 import { logoutAction } from "@/app/[lang]/logout-actions";
+import { type BankAccount, getBankAccount } from "@/lib/bank-account";
 import { getDictionary, isLocale, localePath } from "@/lib/i18n";
 import { isAdminSession } from "@/lib/session-cookies";
+import AdminBankForm from "./bank-form";
 import AdminResetForm from "./reset-form";
 
 export const instant = false;
@@ -22,6 +24,14 @@ export default async function AdminPage({ params }: AdminPageProps) {
   const dictionary = getDictionary(lang);
 
   if (!(await isAdminSession())) redirect(localePath(lang, "/admin/login"));
+
+  let bankAccount: BankAccount | null = null;
+  let bankUnavailable = false;
+  try {
+    bankAccount = await getBankAccount();
+  } catch {
+    bankUnavailable = true;
+  }
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-10 text-slate-100">
@@ -42,6 +52,22 @@ export default async function AdminPage({ params }: AdminPageProps) {
         </header>
         <p className="text-sm text-slate-400">{dictionary.admin.subtitle}</p>
         <AdminResetForm locale={lang} labels={dictionary.admin} />
+        {bankUnavailable ? (
+          <section className="space-y-4">
+            <h2 className="text-xl font-semibold">
+              {dictionary.admin.bank.sectionHeading}
+            </h2>
+            <p className="rounded-lg border border-slate-700 bg-slate-900 p-6 text-sm text-slate-300">
+              {dictionary.admin.bank.unavailable}
+            </p>
+          </section>
+        ) : (
+          <AdminBankForm
+            locale={lang}
+            labels={dictionary.admin.bank}
+            initialValues={bankAccount}
+          />
+        )}
       </div>
     </main>
   );

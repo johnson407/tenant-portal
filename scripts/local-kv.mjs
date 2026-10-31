@@ -2,8 +2,9 @@
 //
 // The app talks to Upstash over its REST API. Without credentials, room login
 // and admin actions fail closed because rate limiting cannot run. This mock
-// implements just the commands used by lib/rate-limit.ts, lib/code-store.ts and
-// lib/session-version.ts: get, set (nx/xx/ex/px/exat/pxat), incr, expire, del.
+// implements just the commands used by lib/rate-limit.ts, lib/code-store.ts,
+// lib/session-version.ts and lib/bank-account.ts: get, set (nx/xx/ex/px/exat/pxat),
+// incr, expire, del, hset, hgetall.
 //
 // Data lives in memory and is lost when the process exits. Never use it in
 // production; it has no auth, persistence, or concurrency guarantees.
@@ -77,6 +78,24 @@ function runCommand(store, command) {
       let removed = 0;
       for (const key of args) if (store.delete(key)) removed += 1;
       return removed;
+    }
+    case "hset": {
+      const [key, ...pairs] = args;
+      const existing = alive(store, key);
+      const fields = existing?.fields ?? new Map();
+      let added = 0;
+      for (let i = 0; i + 1 < pairs.length; i += 2) {
+        const field = String(pairs[i]);
+        if (!fields.has(field)) added += 1;
+        fields.set(field, String(pairs[i + 1]));
+      }
+      store.set(key, { fields, expiresAt: existing?.expiresAt ?? null });
+      return added;
+    }
+    case "hgetall": {
+      const entry = alive(store, args[0]);
+      if (!entry?.fields) return [];
+      return [...entry.fields.entries()].flat();
     }
     default:
       throw new Error(`Unsupported command: ${name}`);

@@ -6,7 +6,7 @@ const en: Dictionary = {
     description: "View rent bills, payments, and lease dates.",
     homeTitle: "Tenant Portal",
     loginTitle: "Tenant sign in",
-    adminTitle: "Admin - Reset room code",
+    adminTitle: "Admin",
     adminLoginTitle: "Admin sign in",
   },
   common: {
@@ -55,6 +55,13 @@ const en: Dictionary = {
     leaseStart: "Lease start",
     leaseEnd: "Lease end",
     renewalDue: "Renewal decision due",
+    bankAccount: {
+      heading: "Rent bank account",
+      bankName: "Bank",
+      recipientName: "Recipient",
+      bankCode: "Bank code",
+      accountNo: "Account number",
+    },
   },
   denied: {
     heading: "Not authorized",
@@ -72,9 +79,10 @@ const en: Dictionary = {
     },
   },
   admin: {
-    heading: "Room access codes",
+    heading: "Admin",
     subtitle:
-      "Reset the access code for any room. A new code is shown once - copy it before leaving this page.",
+      "Reset room access codes and maintain the bank account shown to tenants.",
+    resetSectionHeading: "Room access codes",
     roomLabel: "Room",
     newCodeLabel: "New 10-character code (leave blank to generate one)",
     codePlaceholder: "e.g. R3turnK3y55",
@@ -89,6 +97,28 @@ const en: Dictionary = {
     copied: "Copied",
     warning: "This code is shown only once. It is stored only as a bcrypt hash from now on.",
     resetAnother: "Reset another room",
+    bank: {
+      sectionHeading: "Bank account",
+      bankName: "Bank name",
+      recipientName: "Recipient name",
+      bankCode: "Bank code",
+      accountNo: "Account number",
+      bankNamePlaceholder: "e.g. E.SUN Bank",
+      recipientNamePlaceholder: "e.g. Wang Xiao-Ming",
+      bankCodePlaceholder: "e.g. 808",
+      accountNoPlaceholder: "e.g. 0123456789012",
+      bankCodeHint: "Digits only, 3 to 7 characters.",
+      accountNoHint: "Digits only, 6 to 20 characters.",
+      save: "Save bank account",
+      saving: "Saving...",
+      saved: "Bank account saved.",
+      unavailable:
+        "Bank account details are temporarily unavailable. Try again later.",
+      errors: {
+        invalid: "Check the bank details and try again.",
+        generic: "Could not save the bank account. Try again.",
+      },
+    },
   },
 };
 
