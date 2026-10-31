@@ -7,11 +7,15 @@ Presents each authenticated tenant a private dashboard for their own room, showi
 ## Requirements
 
 ### Requirement: Room dashboard display
-For each authenticated tenant with a valid session, the system SHALL display a dashboard for their room showing bills, payments, and lease dates read from AppFeed and scoped to the session's room. It SHALL show open bills, up to 12 recent payments, and the room's lease, and MUST NOT render placeholder data in production.
+For each authenticated tenant with a valid session, the system SHALL display a dashboard for their room showing bills, payments, and lease dates read from AppFeed and scoped to the session's room, plus the configured bank account reference shared by all rooms. It SHALL show open bills, up to 12 recent payments, the room's lease, and the bank account section when one is configured, and MUST NOT render placeholder data in production.
 
 #### Scenario: Tenant views own dashboard
 - **WHEN** the tenant authenticated for room `E` opens their dashboard
 - **THEN** the page shows room E's AppFeed open bills, payment history, and lease dates
+
+#### Scenario: Bank account appears alongside AppFeed data
+- **WHEN** the tenant authenticated for room `A` opens their dashboard while a bank account is configured
+- **THEN** the page shows the bank name, recipient name, bank code, and account number in a labeled reference section in addition to the AppFeed sections
 
 #### Scenario: Unauthenticated access attempt
 - **WHEN** a visitor without a valid session requests any room dashboard
