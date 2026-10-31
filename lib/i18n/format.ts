@@ -1,8 +1,18 @@
 import type { Locale } from "./config";
 
 const twdFormatters: Record<Locale, Intl.NumberFormat> = {
-  en: new Intl.NumberFormat("en", { style: "currency", currency: "TWD" }),
-  "zh-TW": new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD" }),
+  en: new Intl.NumberFormat("en", {
+    style: "currency",
+    currency: "TWD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }),
+  "zh-TW": new Intl.NumberFormat("zh-TW", {
+    style: "currency",
+    currency: "TWD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }),
 };
 
 const dateFormatters: Record<Locale, Intl.DateTimeFormat> = {
@@ -10,9 +20,22 @@ const dateFormatters: Record<Locale, Intl.DateTimeFormat> = {
   "zh-TW": new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeZone: "UTC" }),
 };
 
-/** Formats integer cents as New Taiwan dollars for the active locale. */
-export function formatTwd(amountCents: number, locale: Locale): string {
-  return twdFormatters[locale].format(amountCents / 100);
+const dateTimeFormatters: Record<Locale, Intl.DateTimeFormat> = {
+  en: new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Taipei",
+  }),
+  "zh-TW": new Intl.DateTimeFormat("zh-TW", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Taipei",
+  }),
+};
+
+/** Formats whole New Taiwan dollars for the active locale. */
+export function formatTwd(amountDollars: number, locale: Locale): string {
+  return twdFormatters[locale].format(amountDollars);
 }
 
 /**
@@ -21,4 +44,9 @@ export function formatTwd(amountCents: number, locale: Locale): string {
  */
 export function formatDate(isoDate: string, locale: Locale): string {
   return dateFormatters[locale].format(new Date(`${isoDate}T00:00:00Z`));
+}
+
+/** Formats an ISO timestamp in Taiwan time for the last-updated caption. */
+export function formatDateTime(isoTimestamp: string, locale: Locale): string {
+  return dateTimeFormatters[locale].format(new Date(isoTimestamp));
 }

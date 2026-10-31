@@ -146,7 +146,8 @@ const ROOM_TEXT_PAIRS: TextPair[] = [
   { label: "room section heading slate-800 on white", fg: "slate-800", bg: "white", expected: 14.63 },
   { label: "room bill/payment row slate-900 on white", fg: "slate-900", bg: "white", expected: 17.85 },
   { label: "room lease value slate-900 on white", fg: "slate-900", bg: "white", expected: 17.85 },
-  { label: "room (sample data) slate-700 on slate-100", fg: "slate-700", bg: "slate-100", expected: 9.45 },
+  { label: "room last-updated caption slate-700 on slate-100", fg: "slate-700", bg: "slate-100", expected: 9.45 },
+  { label: "room breakdown label slate-700 on white", fg: "slate-700", bg: "white", expected: 10.35 },
   { label: "room lease label slate-700 on white", fg: "slate-700", bg: "white", expected: 10.35 },
   { label: "room body slate-900 on slate-100", fg: "slate-900", bg: "slate-100", expected: 16.3 },
   { label: "room light-mode inherited #171717 on slate-100", fg: "inherited-light", bg: "slate-100", expected: 16.36 },
@@ -186,9 +187,10 @@ describe("room dashboard", () => {
       ),
     ).toBe(2);
     sourceHas(file, "rounded border border-slate-300 bg-white p-4 text-slate-900");
+    sourceHas(file, "rounded border border-slate-300 bg-white p-6 text-slate-900");
 
-    expect(sourceCount(file, "text-sm font-normal text-slate-700")).toBe(3);
-    expect(sourceCount(file, "text-xs text-slate-700")).toBe(3);
+    sourceLacks(file, "text-sm font-normal text-slate-700");
+    expect(sourceCount(file, "text-xs text-slate-700")).toBe(5);
     sourceLacks(file, "text-slate-500");
     sourceLacks(file, "border-slate-200");
     sourceLacks(file, "divide-slate-200");
@@ -291,7 +293,7 @@ describe("admin reset page", () => {
 describe("pre-fix ratios documented in the design table", () => {
   it.each([
     { label: "login footer slate-500 on slate-900", fg: "slate-500" as Colour, bg: "slate-900" as Colour, expected: 3.75 },
-    { label: "room (sample data) slate-500 on slate-100", fg: "slate-500" as Colour, bg: "slate-100" as Colour, expected: 4.34 },
+    { label: "room last-updated caption slate-500 on slate-100", fg: "slate-500" as Colour, bg: "slate-100" as Colour, expected: 4.34 },
   ])("$label was below 4.5:1", ({ fg, bg, expected }) => {
     expect(ratio(fg, bg)).toBe(expected);
     expect(ratio(fg, bg)).toBeLessThan(4.5);

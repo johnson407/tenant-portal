@@ -319,13 +319,13 @@ check("room B receives a fresh session cookie", tenantJar.has("tp_session"));
 response = await get(tenantJar, "/en/rooms/b");
 html = await response.text();
 check("room B dashboard is served", response.status === 200 && !html.includes("Not authorized"));
-check("room B dashboard shows room B data only", html.includes("$700.00") && !html.includes("$750.00"));
+check("room B dashboard shows room B, not room A", html.includes("Room B") && !html.includes("Room A"));
 
 response = await get(tenantJar, "/en/rooms/a");
 html = await response.text();
 check(
   "room B cannot view room A",
-  html.includes("Not authorized") && !html.includes("$750.00"),
+  html.includes("Not authorized") && !html.includes("Room A"),
 );
 
 // GET /en/logout is not a route and must not clear the current cookie.

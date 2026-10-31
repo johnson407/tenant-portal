@@ -3,12 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import LocaleSwitcher from "@/app/[lang]/locale-switcher";
 import { logoutAction } from "@/app/[lang]/logout-actions";
+import { getRoomFeed } from "@/lib/appfeed/feed";
+import type { FeedResult } from "@/lib/appfeed/types";
 import { getDictionary, isLocale, localePath } from "@/lib/i18n";
-import { formatDate, formatTwd } from "@/lib/i18n/format";
-import {
-  PLACEHOLDER_ROOM_DATA,
-  type RoomPlaceholderData,
-} from "@/lib/placeholder-data";
+import { formatDate, formatDateTime, formatTwd } from "@/lib/i18n/format";
 import { getSessionClaims } from "@/lib/session-cookies";
 import { getRoomSessionVersion } from "@/lib/session-version";
 import { ROOM_UPPER, parseRoomLetter } from "@/lib/rooms";
@@ -73,7 +71,16 @@ export default async function RoomPage({ params }: RoomPageProps) {
     );
   }
 
-  const data: RoomPlaceholderData = PLACEHOLDER_ROOM_DATA[room];
+  if (claims?.role !== "tenant") notFound();
+
+  let result: FeedResult;
+  try {
+    result = await getRoomFeed(claims.room);
+  } catch {
+    result = { kind: "unavailable" };
+  }
+
+  const feed = result.kind === "ok" ? result.feed : null;
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-10 text-slate-900">
@@ -83,9 +90,6 @@ export default async function RoomPage({ params }: RoomPageProps) {
             {dictionary.room.headingTemplate.replace("{room}", ROOM_UPPER[room])}
           </h1>
           <div className="flex items-center gap-3">
-            <p className="rounded-full bg-amber-200 px-3 py-1 text-xs font-medium text-amber-900">
-              {dictionary.room.placeholderBadge}
-            </p>
             <LocaleSwitcher locale={lang} path={`/rooms/${room}`} tone="light" />
             <form action={logoutAction.bind(null, lang)}>
               <button
@@ -98,73 +102,150 @@ export default async function RoomPage({ params }: RoomPageProps) {
           </div>
         </header>
 
-        <section>
-          <h2 className="text-xl font-medium text-slate-800">
-            {dictionary.room.bills}{" "}
-            <span className="text-sm font-normal text-slate-700">
-              {dictionary.room.sampleDataCaption}
-            </span>
-          </h2>
-          <ul className="mt-2 divide-y divide-slate-300 rounded border border-slate-300 bg-white text-slate-900">
-            {data.bills.map((bill) => (
-              <li key={bill.labelKey} className="flex items-center justify-between px-4 py-3">
-                <span>{dictionary.room.labels[bill.labelKey]}</span>
-                <span className="font-mono text-sm">
-                  {formatTwd(bill.amountCents, lang)} - {dictionary.room.due}{" "}
-                  {formatDate(bill.due, lang)} - {dictionary.room.status[bill.status]}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        {feed === null ? (
+          <section className="rounded border border-slate-300 bg-white p-6 text-slate-900">
+            <h2 className="text-xl font-medium text-slate-800">
+              {dictionary.room.unavailableHeading}
+            </h2>
+            <p className="mt-2 text-sm text-slate-700">
+              {dictionary.room.unavailableMessage}
+            </p>
+          </section>
+        ) : (
+          <>
+            <p className="text-xs text-slate-700">
+              {dictionary.room.lastUpdatedTemplate.replace(
+                "{date}",
+                formatDateTime(feed.fetchedAt, lang),
+              )}
+            </p>
 
-        <section>
-          <h2 className="text-xl font-medium text-slate-800">
-            {dictionary.room.payments}{" "}
-            <span className="text-sm font-normal text-slate-700">
-              {dictionary.room.sampleDataCaption}
-            </span>
-          </h2>
-          <ul className="mt-2 divide-y divide-slate-300 rounded border border-slate-300 bg-white text-slate-900">
-            {data.payments.map((payment) => (
-              <li
-                key={payment.labelKey}
-                className="flex items-center justify-between px-4 py-3"
-              >
-                <span>{dictionary.room.labels[payment.labelKey]}</span>
-                <span className="font-mono text-sm">
-                  {formatTwd(payment.amountCents, lang)} - {dictionary.room.received}{" "}
-                  {formatDate(payment.received, lang)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
+            <section>
+              <h2 className="text-xl font-medium text-slate-800">
+                {dictionary.room.bills}
+              </h2>
+              {feed.openBills.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-700">
+                  {dictionary.room.emptyBills}
+                </p>
+              ) : (
+                <ul className="mt-2 divide-y divide-slate-300 rounded border border-slate-300 bg-white text-slate-900">
+                  {feed.openBills.map((bill) => (
+                    <li key={bill.period} className="px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium">
+                          {dictionary.room.period} {bill.period}
+                        </span>
+                        <span className="font-mono text-sm">
+                          {dictionary.room.total} {formatTwd(bill.total, lang)} -{" "}
+                          {dictionary.room.due} {formatDate(bill.dueDate, lang)} -{" "}
+                          {dictionary.room.status.open}
+                        </span>
+                      </div>
+                      <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                        {[
+                          {
+                            key: "rent",
+                            label: dictionary.room.rent,
+                            value: bill.rent,
+                          },
+                          {
+                            key: "water",
+                            label: dictionary.room.water,
+                            value: bill.water,
+                          },
+                          {
+                            key: "electricity",
+                            label: dictionary.room.electricity,
+                            value: bill.electricity,
+                          },
+                        ].map(({ key, label, value }) =>
+                          value === null ? null : (
+                            <div key={key} className="flex gap-1">
+                              <dt className="text-xs text-slate-700">{label}</dt>
+                              <dd className="font-mono text-xs text-slate-900">
+                                {formatTwd(value, lang)}
+                              </dd>
+                            </div>
+                          ),
+                        )}
+                      </dl>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
-        <section>
-          <h2 className="text-xl font-medium text-slate-800">
-            {dictionary.room.leaseDates}{" "}
-            <span className="text-sm font-normal text-slate-700">
-              {dictionary.room.sampleDataCaption}
-            </span>
-          </h2>
-          <dl className="mt-2 grid grid-cols-1 gap-2 rounded border border-slate-300 bg-white p-4 text-slate-900 sm:grid-cols-3">
-            <div>
-              <dt className="text-xs text-slate-700">{dictionary.room.leaseStart}</dt>
-              <dd className="font-mono text-sm">{formatDate(data.lease.start, lang)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-700">{dictionary.room.leaseEnd}</dt>
-              <dd className="font-mono text-sm">{formatDate(data.lease.end, lang)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-700">{dictionary.room.renewalDue}</dt>
-              <dd className="font-mono text-sm">
-                {formatDate(data.lease.renewalDue, lang)}
-              </dd>
-            </div>
-          </dl>
-        </section>
+            <section>
+              <h2 className="text-xl font-medium text-slate-800">
+                {dictionary.room.payments}
+              </h2>
+              {feed.payments.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-700">
+                  {dictionary.room.emptyPayments}
+                </p>
+              ) : (
+                <ul className="mt-2 divide-y divide-slate-300 rounded border border-slate-300 bg-white text-slate-900">
+                  {feed.payments.map((payment) => (
+                    <li
+                      key={payment.period}
+                      className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+                    >
+                      <span className="font-medium">
+                        {dictionary.room.period} {payment.period}
+                      </span>
+                      <span className="font-mono text-sm">
+                        {formatTwd(payment.amount, lang)} -{" "}
+                        {dictionary.room.received}{" "}
+                        {formatDate(payment.receivedOn, lang)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section>
+              <h2 className="text-xl font-medium text-slate-800">
+                {dictionary.room.leaseDates}
+              </h2>
+              {feed.lease === null ? (
+                <p className="mt-2 text-sm text-slate-700">
+                  {dictionary.room.emptyLease}
+                </p>
+              ) : (
+                <dl className="mt-2 grid grid-cols-1 gap-2 rounded border border-slate-300 bg-white p-4 text-slate-900 sm:grid-cols-3">
+                  <div>
+                    <dt className="text-xs text-slate-700">
+                      {dictionary.room.leaseStart}
+                    </dt>
+                    <dd className="font-mono text-sm">
+                      {formatDate(feed.lease.start, lang)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-slate-700">
+                      {dictionary.room.leaseEnd}
+                    </dt>
+                    <dd className="font-mono text-sm">
+                      {formatDate(feed.lease.end, lang)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-slate-700">
+                      {dictionary.room.renewalDue}
+                    </dt>
+                    <dd className="font-mono text-sm">
+                      {feed.lease.renewalDue === null
+                        ? dictionary.room.notAvailable
+                        : formatDate(feed.lease.renewalDue, lang)}
+                    </dd>
+                  </div>
+                </dl>
+              )}
+            </section>
+          </>
+        )}
       </div>
     </main>
   );

@@ -22,3 +22,9 @@ never use it outside local development. Set `LOCAL_KV_PORT` to change the port.
 If you generate hashes with `node scripts/hash-codes.mjs`, escape the `$` in
 `.env` values (`\$2b\$12\$...`). Next.js expands `$NAME`, which otherwise
 mangles the hash.
+
+## Dashboard data
+
+Tenant dashboards read the separate, PII-free `AppFeed` Google Sheet through a
+service account. See [docs/appfeed-rules.md](docs/appfeed-rules.md) for the
+sheet schema, cell rules, and sharing checklist.

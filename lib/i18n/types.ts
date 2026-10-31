@@ -9,7 +9,6 @@ export type Dictionary = {
   };
   common: {
     room: string;
-    sampleData: string;
     logOut: string;
     switchLocale: string;
     switchLocaleLabel: string;
@@ -30,22 +29,27 @@ export type Dictionary = {
   };
   room: {
     headingTemplate: string;
-    placeholderBadge: string;
     bills: string;
     payments: string;
     leaseDates: string;
-    sampleDataCaption: string;
     due: string;
     received: string;
+    period: string;
     status: {
       open: string;
       paid: string;
     };
-    labels: {
-      rentCurrentMonth: string;
-      utilities: string;
-      rentPreviousMonth: string;
-    };
+    rent: string;
+    water: string;
+    electricity: string;
+    total: string;
+    lastUpdatedTemplate: string;
+    unavailableHeading: string;
+    unavailableMessage: string;
+    emptyBills: string;
+    emptyPayments: string;
+    emptyLease: string;
+    notAvailable: string;
     leaseStart: string;
     leaseEnd: string;
     renewalDue: string;

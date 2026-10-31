@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Tenant Portal
 
-Next.js 16 App Router app: rooms A–E sign in with a 10-character code and see placeholder bills, payments, and lease dates; an admin resets room codes. The UI is locale-prefixed (`zh-TW` by default, `en` optional). No database and no tenant PII.
+Next.js 16 App Router app: rooms A–E sign in with a 10-character code and see their own room's bills, payments, and lease dates from the PII-free `AppFeed` Google Sheet; an admin resets room codes. The UI is locale-prefixed (`zh-TW` by default, `en` optional). No database and no tenant PII.
 
 ## Commands
 
@@ -27,6 +27,7 @@ Next.js 16 App Router app: rooms A–E sign in with a 10-character code and see 
 ## Environment
 
 - Copy `.env.example` to `.env.local`. Required: `SESSION_SECRET`, `ADMIN_PASSWORD`, `ROOM_CODE_HASH_A`…`E`, and `KV_REST_API_URL`/`KV_REST_API_TOKEN`.
+- Dashboard data additionally requires `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, and `APPFEED_SPREADSHEET_ID`. They are server-only and sensitive: never prefix them with `NEXT_PUBLIC_`, commit them, or log them. Until all three are set, every room shows the generic unavailable state.
 - Escape `$` as `\$` in `.env` values: Next.js expands `$NAME`, which otherwise mangles bcrypt hashes like `$2b$12$…`.
 - Upstash Redis is required at runtime. Room login, bcrypt code storage, per-room session versions, and rate limits all fail closed without it; unit tests mock it. For local previews without an Upstash account, run `npm run dev:kv` and set `KV_REST_API_URL=http://127.0.0.1:8081` plus any non-empty `KV_REST_API_TOKEN`.
 - Plaintext room codes must never be committed. Generate hashes with `node scripts/hash-codes.mjs --code-into=a`.
@@ -41,13 +42,15 @@ Next.js 16 App Router app: rooms A–E sign in with a 10-character code and see 
 - An admin code reset bumps `room:<letter>:session-version`, invalidating that room's existing sessions. Logout deliberately does not bump it; logout is browser-local.
 - Redis also holds rate-limit counters with escalating lockouts. If Redis is unavailable, fail with a generic error rather than bypassing the check.
 - Server Actions live in `app/**/actions.ts` and are POST-only. Forms needing pending/error state use client components with `useActionState`; logout uses plain server-rendered forms.
-- Placeholder dashboard data is in `lib/placeholder-data.ts`. Never add tenant names, phone numbers, emails, or plaintext codes anywhere.
+- Dashboard data comes only from the PII-free `AppFeed` Google Sheet through `lib/appfeed/`: `google.ts` guards the title/tabs and reads fixed ranges, `validate.ts` validates and projects one room, and `feed.ts` caches the room-scoped result. See `docs/appfeed-rules.md` for the human sheet checklist.
+- The landlord's main rent file, any copy of it, and its name/ID/URL must never appear in code, env, logs, fixtures, or URLs, and it must never be shared with the service account. Never add tenant names, phone numbers, emails, IDs, addresses, or plaintext codes anywhere.
 - `next.config.ts` enables `cacheComponents` and `partialPrefetching`; protected pages set `export const instant = false`.
 
 ## Testing
 
 - Vitest runs in a node environment with the `@` alias mapped to the repo root, and includes only `tests/**/*.test.ts`.
 - Follow the existing pattern: `vi.hoisted` plus `vi.mock` for `next/headers`, `next/navigation`, and lib modules; see `tests/login-action.test.ts`. Page tests pass `params` with the locale, for example `Promise.resolve({ lang: "zh-TW", room: "a" })`.
+- AppFeed coverage lives in `tests/appfeed-{validate,google,feed,boundary}.test.ts`. They mock Google fetch, use synthetic fixtures only, and check the server-only/PII boundaries.
 - Browser/HTTP checks are local-only and separate: `e2e/logout.spec.ts` and `scripts/logout-e2e.mjs`. They need real Redis and env values and are not part of `npm test`.
 - If Playwright cannot install system libraries without sudo, extract `libnspr4`, `libnss3`, and `libasound2t64` locally and run with `LD_LIBRARY_PATH` set.
 
@@ -57,3 +60,7 @@ Next.js 16 App Router app: rooms A–E sign in with a 10-character code and see 
 - Before implementing, run `openspec list --json` and `openspec instructions apply --change <name> --json`. Tasks are tracked by `- [ ]` checkboxes; mark `- [x]` only when verified.
 - Do not hand-edit main specs. Use the sync/archive workflows; a change's proposal/design/tasks are the source of truth. Run `openspec validate <name> --strict` before archiving.
 - OpenCode commands and skills are in `.opencode/commands/opsx-*.md` and `.opencode/skills/openspec-*`.
+
+## Data boundary
+
+Never reference the landlord's main rent file, any copy of it, or its ID, name, or URL in code, env, logs, fixtures, or URLs, and never share it with the service account.

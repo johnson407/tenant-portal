@@ -13,7 +13,7 @@ The system SHALL present a visible logout submit control, labelled by the active
 #### Scenario: Authorized tenant sees Log out
 
 - **WHEN** a tenant with a current session opens their own `/zh-TW/rooms/<letter>` or `/en/rooms/<letter>` dashboard
-- **THEN** the header shows the logout button beside the placeholder-data badge, labelled 「登出」 in `zh-TW` and "Log out" in `en`
+- **THEN** the dashboard header shows the logout button, labelled 「登出」 in `zh-TW` and "Log out" in `en`
 
 #### Scenario: Tenant on another room's denial view sees Log out
 

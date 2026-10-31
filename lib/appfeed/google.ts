@@ -1,0 +1,299 @@
+import "server-only";
+import { importPKCS8, SignJWT } from "jose";
+import type {
+  SnapshotFailure,
+  SnapshotFailureReason,
+  SnapshotResult,
+} from "./types";
+import { BILLS_HEADER, LEASES_HEADER, hasExactHeaderRow } from "./validate";
+
+const TOKEN_URL = "https://oauth2.googleapis.com/token";
+const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
+const SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
+const JWT_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:jwt-bearer";
+const EXPECTED_TITLE = "AppFeed";
+const BILLS_RANGE = "Bills!A:G";
+const LEASES_RANGE = "Leases!A:D";
+const TIMEOUT_MS = 8000;
+const TOKEN_EXPIRY_SKEW_MS = 60_000;
+
+type Credentials = {
+  email: string;
+  privateKey: string;
+  spreadsheetId: string;
+};
+
+type TokenCacheEntry = {
+  token: string;
+  expiresAt: number;
+};
+
+let tokenCache: TokenCacheEntry | null = null;
+
+function failure(
+  reason: SnapshotFailureReason,
+  transient = false,
+): SnapshotFailure {
+  return { kind: "unavailable", reason, transient };
+}
+
+function statusFailure(status: number): SnapshotFailure {
+  if (status === 401 || status === 403) return failure("auth");
+  if (status === 429) return failure("quota", true);
+  if (status >= 500) return failure("server", true);
+  return failure("auth");
+}
+
+function isTimeoutError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "TimeoutError" || error.name === "AbortError")
+  );
+}
+
+function requestFailure(error: unknown): SnapshotFailure {
+  return isTimeoutError(error) ? failure("timeout", true) : failure("network", true);
+}
+
+function readCredentials(): Credentials | null {
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
+  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.trim();
+  const spreadsheetId = process.env.APPFEED_SPREADSHEET_ID?.trim();
+
+  if (!email || !privateKey || !spreadsheetId) return null;
+
+  return {
+    email,
+    privateKey: privateKey.replace(/\\n/g, "\n").trim(),
+    spreadsheetId,
+  };
+}
+
+async function readJson(response: Response): Promise<unknown | null> {
+  try {
+    return await response.json();
+  } catch (error) {
+    if (isTimeoutError(error)) throw error;
+    return null;
+  }
+}
+
+async function getAccessToken(
+  credentials: Credentials,
+  signal: AbortSignal,
+): Promise<{ kind: "ok"; token: string } | SnapshotFailure> {
+  if (tokenCache && Date.now() < tokenCache.expiresAt - TOKEN_EXPIRY_SKEW_MS) {
+    return { kind: "ok", token: tokenCache.token };
+  }
+
+  let assertion: string;
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const key = await importPKCS8(credentials.privateKey, "RS256");
+    assertion = await new SignJWT({ scope: SCOPE })
+      .setProtectedHeader({ alg: "RS256", typ: "JWT" })
+      .setIssuer(credentials.email)
+      .setAudience(TOKEN_URL)
+      .setIssuedAt(now)
+      .setExpirationTime(now + 3600)
+      .sign(key);
+  } catch {
+    return failure("config");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: JWT_GRANT_TYPE,
+        assertion,
+      }).toString(),
+      signal,
+      redirect: "error",
+      cache: "no-store",
+    });
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  if (!response.ok) return statusFailure(response.status);
+
+  let body: unknown;
+  try {
+    body = await readJson(response);
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  const data = body as { access_token?: unknown; expires_in?: unknown } | null;
+  if (!data || typeof data.access_token !== "string" || !data.access_token) {
+    return failure("auth");
+  }
+
+  const expiresIn = Number(data.expires_in);
+  if (!Number.isFinite(expiresIn) || expiresIn <= 0) return failure("auth");
+
+  tokenCache = {
+    token: data.access_token,
+    expiresAt: Date.now() + expiresIn * 1000,
+  };
+
+  return { kind: "ok", token: data.access_token };
+}
+
+async function fetchMetadata(
+  credentials: Credentials,
+  token: string,
+  signal: AbortSignal,
+): Promise<{ kind: "ok" } | SnapshotFailure> {
+  const url = `${SHEETS_API}/${encodeURIComponent(
+    credentials.spreadsheetId,
+  )}?fields=properties.title,sheets.properties.title`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { authorization: `Bearer ${token}` },
+      signal,
+      redirect: "error",
+      cache: "no-store",
+    });
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  if (!response.ok) return statusFailure(response.status);
+
+  let body: unknown;
+  try {
+    body = await readJson(response);
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  const data = body as
+    | {
+        properties?: { title?: unknown };
+        sheets?: Array<{ properties?: { title?: unknown } }>;
+      }
+    | null;
+
+  const title = data?.properties?.title;
+  const tabs = Array.isArray(data?.sheets)
+    ? data.sheets.map((sheet) => sheet?.properties?.title)
+    : [];
+
+  const hasExactTabs =
+    tabs.length === 2 &&
+    tabs.filter((tab) => tab === "Bills").length === 1 &&
+    tabs.filter((tab) => tab === "Leases").length === 1;
+
+  if (title !== EXPECTED_TITLE || !hasExactTabs) return failure("wrong-file");
+
+  return { kind: "ok" };
+}
+
+async function fetchValues(
+  credentials: Credentials,
+  token: string,
+  signal: AbortSignal,
+): Promise<SnapshotResult> {
+  const query =
+    `ranges=${BILLS_RANGE}&ranges=${LEASES_RANGE}` +
+    `&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE`;
+  const url = `${SHEETS_API}/${encodeURIComponent(
+    credentials.spreadsheetId,
+  )}/values:batchGet?${query}`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { authorization: `Bearer ${token}` },
+      signal,
+      redirect: "error",
+      cache: "no-store",
+    });
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  if (!response.ok) return statusFailure(response.status);
+
+  let body: unknown;
+  try {
+    body = await readJson(response);
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  const data = body as
+    | {
+        valueRanges?: Array<{ range?: unknown; values?: unknown }>;
+      }
+    | null;
+
+  const valueRanges = Array.isArray(data?.valueRanges) ? data.valueRanges : [];
+  if (valueRanges.length !== 2) return failure("server");
+
+  const [billsRange, leasesRange] = valueRanges;
+  const billsName = String(billsRange?.range ?? "");
+  const leasesName = String(leasesRange?.range ?? "");
+
+  if (!billsName.startsWith("Bills!") || !leasesName.startsWith("Leases!")) {
+    return failure("server");
+  }
+
+  const bills = billsRange?.values;
+  const leases = leasesRange?.values;
+
+  if (
+    !hasExactHeaderRow(bills, BILLS_HEADER) ||
+    !hasExactHeaderRow(leases, LEASES_HEADER)
+  ) {
+    return failure("headers");
+  }
+
+  return {
+    kind: "ok",
+    snapshot: {
+      bills: bills as unknown[][],
+      leases: leases as unknown[][],
+    },
+  };
+}
+
+/**
+ * Reads the two fixed AppFeed ranges after checking the file title and exact
+ * tab set. All failures are returned as typed results; no response body, ID,
+ * token, or key is included or logged.
+ */
+export async function fetchAppFeedSnapshot(): Promise<SnapshotResult> {
+  const credentials = readCredentials();
+  if (!credentials) {
+    const result = failure("config");
+    console.warn("[appfeed] snapshot unavailable", { reason: result.reason });
+    return result;
+  }
+
+  const signal = AbortSignal.timeout(TIMEOUT_MS);
+
+  const token = await getAccessToken(credentials, signal);
+  if (token.kind === "unavailable") {
+    console.warn("[appfeed] snapshot unavailable", { reason: token.reason });
+    return token;
+  }
+
+  const metadata = await fetchMetadata(credentials, token.token, signal);
+  if (metadata.kind === "unavailable") {
+    console.warn("[appfeed] snapshot unavailable", { reason: metadata.reason });
+    return metadata;
+  }
+
+  const result = await fetchValues(credentials, token.token, signal);
+  if (result.kind === "unavailable") {
+    console.warn("[appfeed] snapshot unavailable", { reason: result.reason });
+  }
+  return result;
+}

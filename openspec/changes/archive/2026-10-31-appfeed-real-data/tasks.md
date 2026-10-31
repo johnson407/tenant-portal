@@ -2,10 +2,10 @@
 
 ## 0. Manual prerequisites (Johnson-owned, not agent code tasks)
 
-- [x] 0.1 (Johnson) Create a new Google Sheet titled exactly `AppFeed` with exactly two tabs, `Bills` and `Leases`; verify by reading the title and tab names. The app never creates or edits this sheet. Done 2026-10-31: spreadsheetId `1kETMfVU22AuWCteIEFlTW1DhoQqBLompB2MGgPfv1ng`, tabs `Bills` and `Leases`.
+- [x] 0.1 (Johnson) Create a new Google Sheet titled exactly `AppFeed` with exactly two tabs, `Bills` and `Leases`; verify by reading the title and tab names. The app never creates or edits this sheet. Done 2026-10-31: spreadsheet ID recorded in local `.env.local` (not committed), tabs `Bills` and `Leases`.
 - [x] 0.2 (Johnson) Enter the exact header rows from `proposal.md` (`Bills`: `room, period, rent, water, electricity, due_date, paid_on`; `Leases`: `room, lease_start, lease_end, renewal_due`) and format `room`, `period`, and all date cells as plain text; verify no header is renamed or reordered. Done 2026-10-31: header rows written.
-- [ ] 0.3 (Johnson) Using the personal gmail.com account, create a Google Cloud project, enable the Google Sheets API, create a service account, and download one JSON key; verify the service-account email and key exist and the key is stored outside the repo.
-- [ ] 0.4 (Johnson) Share **only** `AppFeed` with the service-account email as Viewer; verify in the Google Drive Share dialog that the service account does not appear on the main rent file or any copy of it.
+- [x] 0.3 (Johnson) Using the personal gmail.com account, create a Google Cloud project, enable the Google Sheets API, create a service account, and download one JSON key; verify the service-account email and key exist and the key is stored outside the repo.
+- [x] 0.4 (Johnson) Share **only** `AppFeed` with the service-account email as Viewer; verify in the Google Drive Share dialog that the service account does not appear on the main rent file or any copy of it.
 - [x] 0.5 (Johnson) Approve or change the numbered "Open decisions for Johnson" in `proposal.md`; if no answer is recorded, the recommended defaults in that section apply. Done 2026-10-31: Johnson approved all recommended defaults (recorded in `proposal.md`).
 
 ## 1. Feed types and validators
@@ -75,14 +75,14 @@
 
 ## 7. Verification against the real AppFeed sheet (only after group 0 is complete)
 
-- [ ] 7.1 With the real sheet shared and local env vars set, open each room's dashboard and compare every open bill, payment, and lease date against the sheet; verify the totals and ordering.
-- [ ] 7.2 Make a **copy** of AppFeed, add one malformed row for room A (for example `$1,000` rent), point the local `APPFEED_SPREADSHEET_ID` at the copy, and verify only room A is unavailable while rooms B-E still render; restore the original ID afterward.
-- [ ] 7.3 Unshare AppFeed from the service account locally and verify the generic unavailable state appears for every room; re-share as Viewer and verify recovery.
-- [ ] 7.4 Create a throwaway synthetic sheet (fake values only, never a copy of the main rent file) with the wrong title and an extra tab, share it with the service account as Viewer, point the local `APPFEED_SPREADSHEET_ID` at it, and verify the wrong-file guard refuses before any cell read; unshare, delete the sheet, and restore the real ID afterward. Never share the main rent file or a copy of it with the service account for this test.
-- [ ] 7.5 Change one `paid_on` cell, wait for the 15-minute revalidate (or restart the local server to clear the in-memory cache), and verify the bill moves to payments and the last-updated time changes.
-- [ ] 7.6 Inspect the server logs after a deliberate bad row and a Google failure; verify only reason codes, tab names, row numbers, and counts appear, with no cell values, IDs, tokens, or PII.
-- [ ] 7.7 Open one room in `zh-TW` and `en`; verify `$750`/`NT$750`, localized dates, the last-updated caption, and all unavailable/empty/not-available copy.
-- [ ] 7.8 Search the rendered HTML and the source for "sample", "placeholder", "範例", and the old placeholder values; verify no matches.
+- [x] 7.1 With the real sheet shared and local env vars set, open each room's dashboard and compare every open bill, payment, and lease date against the sheet; verify the totals and ordering. Verified 2026-10-31 against the live AppFeed: all five rooms matched, including totals, due dates, ordering, leases, and both locales.
+- [x] 7.2 Make a **copy** of AppFeed, add one malformed row for room A (for example `$1,000` rent), point the local `APPFEED_SPREADSHEET_ID` at the copy, and verify only room A is unavailable while rooms B-E still render; restore the original ID afterward. **Skipped by Johnson on 2026-10-31 (error-path test).**
+- [x] 7.3 Unshare AppFeed from the service account locally and verify the generic unavailable state appears for every room; re-share as Viewer and verify recovery. **Skipped by Johnson on 2026-10-31 (error-path test).**
+- [x] 7.4 Create a throwaway synthetic sheet (fake values only, never a copy of the main rent file) with the wrong title and an extra tab, share it with the service account as Viewer, point the local `APPFEED_SPREADSHEET_ID` at it, and verify the wrong-file guard refuses before any cell read; unshare, delete the sheet, and restore the real ID afterward. Never share the main rent file or a copy of it with the service account for this test. **Skipped by Johnson on 2026-10-31 (error-path test).**
+- [x] 7.5 Change one `paid_on` cell, wait for the 15-minute revalidate (or restart the local server to clear the in-memory cache), and verify the bill moves to payments and the last-updated time changes. Verified 2026-10-31: room A 2026-10 moved to Payments with `$15,107` / `NT$15,107`, received 2026-10-15; last updated advanced after restart.
+- [x] 7.6 Inspect the server logs after a deliberate bad row and a Google failure; verify only reason codes, tab names, row numbers, and counts appear, with no cell values, IDs, tokens, or PII. **Skipped by Johnson on 2026-10-31 (error-path test).**
+- [x] 7.7 Open one room in `zh-TW` and `en`; verify `$750`/`NT$750`, localized dates, the last-updated caption, and all unavailable/empty/not-available copy. Verified with live amounts (`$13,500` / `NT$13,500`), localized dates, last-updated, empty payments, and not-available renewal; unavailable cards were verified during the live auth-failure check.
+- [x] 7.8 Search the rendered HTML and the source for "sample", "placeholder", "範例", and the old placeholder values; verify no matches.
 
 ## 8. Deploy (unchecked until Johnson explicitly says to deploy)
 
