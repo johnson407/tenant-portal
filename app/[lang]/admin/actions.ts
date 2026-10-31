@@ -2,7 +2,7 @@
 
 import bcrypt from "bcryptjs";
 import { getSessionClaims } from "@/lib/session-cookies";
-import { parseRoomLetter } from "@/lib/rooms";
+import { isValidRoomPassword, parseRoomLetter } from "@/lib/rooms";
 import { PASSWORD_HASH_COST, setStoredHash } from "@/lib/code-store";
 import { bumpRoomSessionVersion } from "@/lib/session-version";
 import {
@@ -49,6 +49,19 @@ export async function resetRoomCodeAction(
     return { status: "error", message: GENERIC_ADMIN_RESET_ERROR };
   }
 
+  const room = parseRoomLetter(String(formData.get("room") ?? ""));
+  if (!room) {
+    return { status: "error", message: "invalid-room" };
+  }
+
+  const chosen = String(formData.get("code") ?? "");
+  const code = chosen === "" ? generateRoomCode() : chosen;
+  if (!isValidRoomPassword(code)) {
+    return { status: "error", message: "invalid-password" };
+  }
+
+  // Validate input before consuming an attempt so a typo does not count
+  // toward the admin-reset lockout. Only real reset attempts are limited.
   const keys = await clientIpKeys();
   let decision: RateLimitDecision;
   try {
@@ -60,14 +73,6 @@ export async function resetRoomCodeAction(
   if (!decision.allowed) {
     return { status: "error", message: GENERIC_ADMIN_RESET_ERROR };
   }
-
-  const room = parseRoomLetter(String(formData.get("room") ?? ""));
-  if (!room) {
-    return { status: "error", message: "invalid-room" };
-  }
-
-  const chosen = String(formData.get("code") ?? "");
-  const code = /^[A-Za-z0-9]{10}$/.test(chosen) ? chosen : generateRoomCode();
 
   try {
     const hash = await bcrypt.hash(code, PASSWORD_HASH_COST);

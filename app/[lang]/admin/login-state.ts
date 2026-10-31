@@ -1,6 +1,6 @@
 export type AdminLoginState = { error?: "access-denied" };
 
-export type AdminResetError = "access-denied" | "invalid-room";
+export type AdminResetError = "access-denied" | "invalid-room" | "invalid-password";
 
 export type AdminResetState =
   | { status: "idle" }

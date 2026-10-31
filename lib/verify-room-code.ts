@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { getStoredHash, NO_CODE_CONFIGURED_MESSAGE } from "./code-store";
-import { isValidCode, parseRoomLetter, type RoomLetter } from "./rooms";
+import { isValidRoomPassword, parseRoomLetter, type RoomLetter } from "./rooms";
 
 export type VerifyRoomCodeResult =
   | { ok: true; room: RoomLetter }
@@ -14,7 +14,7 @@ export async function verifyRoomCode(
   submitted: unknown,
 ): Promise<VerifyRoomCodeResult> {
   const room = typeof roomInput === "string" ? parseRoomLetter(roomInput) : null;
-  if (!room || typeof submitted !== "string" || !isValidCode(submitted)) {
+  if (!room || !isValidRoomPassword(submitted)) {
     return { ok: false, reason: "invalid_input" };
   }
 

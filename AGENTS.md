@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Tenant Portal
 
-Next.js 16 App Router app: rooms A–E sign in with a 10-character code and see their own room's bills, payments, and lease dates from the PII-free `AppFeed` Google Sheet; an admin resets room codes. The UI is locale-prefixed (`zh-TW` by default, `en` optional). No database and no tenant PII.
+Next.js 16 App Router app: rooms A–E sign in with a 4–64 character alphanumeric password and see their own room's bills, payments, and lease dates from the PII-free `AppFeed` Google Sheet; an admin resets room codes. The UI is locale-prefixed (`zh-TW` by default, `en` optional). No database and no tenant PII.
 
 ## Commands
 

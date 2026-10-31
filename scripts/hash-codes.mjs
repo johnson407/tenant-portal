@@ -69,8 +69,14 @@ async function main() {
   for (let idx = 0; idx < args.letters.length; idx += 1) {
     const letter = args.letters[idx].toUpperCase();
     const code = codes[idx];
-    if (!code || code.length !== 10) {
-      console.error(`Room ${letter}: expected a 10-character code (got ${code ? code.length : 0} chars)`);
+    // Keep in sync with ROOM_PASSWORD_PATTERN in lib/rooms.ts.
+    if (!code || !/^[A-Za-z0-9]{4,64}$/.test(code)) {
+      const length = code ? code.length : 0;
+      const reason =
+        !code || length < 4 || length > 64
+          ? `expected 4-64 characters (got ${length})`
+          : "only A-Z, a-z, and 0-9 are allowed";
+      console.error(`Room ${letter}: ${reason}`);
       process.exitCode = process.exitCode || 1;
       continue;
     }

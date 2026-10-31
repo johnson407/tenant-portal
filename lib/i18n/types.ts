@@ -88,6 +88,7 @@ export type Dictionary = {
     errors: {
       accessDenied: string;
       invalidRoom: string;
+      invalidPassword: string;
     };
     successTemplate: string;
     copy: string;

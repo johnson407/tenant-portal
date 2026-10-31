@@ -64,6 +64,7 @@ describe("resetRoomCodeAction authorization", () => {
     expect(result).toEqual({ status: "error", message: "invalid-room" });
     expect(mocks.hash).not.toHaveBeenCalled();
     expect(mocks.setStoredHash).not.toHaveBeenCalled();
+    expect(mocks.consumeAttempt).not.toHaveBeenCalled();
   });
 
   it("accepts a valid locale on a successful reset", async () => {
@@ -107,5 +108,73 @@ describe("resetRoomCodeAction authorization", () => {
     const result = await resetRoomCodeAction("zh-TW", { status: "idle" }, form("b", "ABCDEFGHIJ"));
 
     expect(result).toEqual({ status: "error", message: GENERIC_ADMIN_RESET_ERROR });
+  });
+
+  it("returns a generic error without hashing or writing when the rate limit denies the reset", async () => {
+    mocks.consumeAttempt.mockResolvedValue({ allowed: false, retryAfterSeconds: 60 });
+
+    const result = await resetRoomCodeAction("en", { status: "idle" }, form("b", "ABCDEFGHIJ"));
+
+    expect(result).toEqual({ status: "error", message: GENERIC_ADMIN_RESET_ERROR });
+    expect(mocks.consumeAttempt).toHaveBeenCalledTimes(1);
+    expect(mocks.hash).not.toHaveBeenCalled();
+    expect(mocks.setStoredHash).not.toHaveBeenCalled();
+    expect(mocks.bumpRoomSessionVersion).not.toHaveBeenCalled();
+  });
+
+  it("consumes an attempt for a non-admin caller even when the room is invalid", async () => {
+    mocks.getSessionClaims.mockResolvedValue({ role: "tenant", room: "a", v: 0, exp: 1 });
+
+    const result = await resetRoomCodeAction("zh-TW", { status: "idle" }, form("z", "ABCDEFGHIJ"));
+
+    expect(result).toEqual({ status: "error", message: GENERIC_ADMIN_RESET_ERROR });
+    expect(mocks.consumeAttempt).toHaveBeenCalledTimes(1);
+    expect(mocks.hash).not.toHaveBeenCalled();
+    expect(mocks.setStoredHash).not.toHaveBeenCalled();
+    expect(mocks.bumpRoomSessionVersion).not.toHaveBeenCalled();
+  });
+});
+
+describe("resetRoomCodeAction password policy", () => {
+  it("accepts a 4-character password verbatim", async () => {
+    const result = await resetRoomCodeAction("en", { status: "idle" }, form("b", "Ab12"));
+
+    expect(result).toEqual({ status: "success", room: "b", code: "Ab12" });
+    expect(mocks.hash).toHaveBeenCalledWith("Ab12", 12);
+    expect(mocks.setStoredHash).toHaveBeenCalledWith("b", "bcrypt-hash");
+  });
+
+  it("accepts a 64-character password verbatim", async () => {
+    const password = "A".repeat(64);
+    const result = await resetRoomCodeAction("en", { status: "idle" }, form("b", password));
+
+    expect(result).toEqual({ status: "success", room: "b", code: password });
+    expect(mocks.hash).toHaveBeenCalledWith(password, 12);
+    expect(mocks.setStoredHash).toHaveBeenCalledWith("b", "bcrypt-hash");
+  });
+
+  it.each(["Ab1", "A".repeat(65), "Ab1-", "   "])(
+    "rejects the out-of-policy password %s without writing",
+    async (password) => {
+      const result = await resetRoomCodeAction("en", { status: "idle" }, form("b", password));
+
+      expect(result).toEqual({ status: "error", message: "invalid-password" });
+      expect(mocks.hash).not.toHaveBeenCalled();
+      expect(mocks.setStoredHash).not.toHaveBeenCalled();
+      expect(mocks.bumpRoomSessionVersion).not.toHaveBeenCalled();
+      expect(mocks.consumeAttempt).not.toHaveBeenCalled();
+    },
+  );
+
+  it("generates a 10-character alphanumeric password when the field is blank", async () => {
+    const result = await resetRoomCodeAction("en", { status: "idle" }, form("b", ""));
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    expect(result.room).toBe("b");
+    expect(result.code).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$/);
+    expect(mocks.hash).toHaveBeenCalledWith(result.code, 12);
+    expect(mocks.setStoredHash).toHaveBeenCalledWith("b", "bcrypt-hash");
+    expect(mocks.bumpRoomSessionVersion).toHaveBeenCalledWith("b");
   });
 });

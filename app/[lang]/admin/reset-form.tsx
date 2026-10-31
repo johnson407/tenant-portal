@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import type { Dictionary, Locale } from "@/lib/i18n";
 import { localePath } from "@/lib/i18n/config";
-import { ROOM_LETTERS, ROOM_UPPER } from "@/lib/rooms";
+import { ROOM_LETTERS, ROOM_PASSWORD_MAX_LENGTH, ROOM_UPPER } from "@/lib/rooms";
 import { resetRoomCodeAction } from "./actions";
 import type { AdminResetState } from "./login-state";
 
@@ -20,6 +20,7 @@ export default function AdminResetForm({ locale, labels }: AdminResetFormProps) 
     initialState,
   );
   const [copied, setCopied] = useState(false);
+  const [code, setCode] = useState("");
   const resultRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -39,7 +40,9 @@ export default function AdminResetForm({ locale, labels }: AdminResetFormProps) 
     state.status === "error"
       ? state.message === "invalid-room"
         ? labels.errors.invalidRoom
-        : labels.errors.accessDenied
+        : state.message === "invalid-password"
+          ? labels.errors.invalidPassword
+          : labels.errors.accessDenied
       : null;
 
   return (
@@ -70,7 +73,9 @@ export default function AdminResetForm({ locale, labels }: AdminResetFormProps) 
                 type="text"
                 autoComplete="off"
                 spellCheck={false}
-                maxLength={10}
+                maxLength={ROOM_PASSWORD_MAX_LENGTH}
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
                 placeholder={labels.codePlaceholder}
                 className="w-full rounded border border-slate-500 bg-slate-950 px-3 py-2 font-mono tracking-widest text-slate-100 placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-300"
               />
@@ -95,8 +100,8 @@ export default function AdminResetForm({ locale, labels }: AdminResetFormProps) 
               ROOM_UPPER[state.room as keyof typeof ROOM_UPPER] ?? state.room,
             )}
           </p>
-          <div className="mt-3 flex items-center gap-2">
-            <code className="block rounded bg-white px-3 py-2 font-mono text-lg tracking-widest select-all">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <code className="block min-w-0 break-all rounded bg-white px-3 py-2 font-mono text-lg tracking-widest select-all">
               {state.code}
             </code>
             <button

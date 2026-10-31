@@ -19,8 +19,12 @@ export function parseRoomLetter(value: string): RoomLetter | null {
   return isRoomLetter(lowercase) ? lowercase : null;
 }
 
-export const CODE_LENGTH = 10;
+export const ROOM_PASSWORD_MIN_LENGTH = 4;
+export const ROOM_PASSWORD_MAX_LENGTH = 64;
+export const ROOM_PASSWORD_PATTERN = new RegExp(
+  `^[A-Za-z0-9]{${ROOM_PASSWORD_MIN_LENGTH},${ROOM_PASSWORD_MAX_LENGTH}}$`,
+);
 
-export function isValidCode(value: string): value is string {
-  return typeof value === "string" && value.length === CODE_LENGTH;
+export function isValidRoomPassword(value: unknown): value is string {
+  return typeof value === "string" && ROOM_PASSWORD_PATTERN.test(value);
 }

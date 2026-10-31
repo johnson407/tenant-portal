@@ -44,9 +44,11 @@ describe("localized client forms", () => {
 
     expect(html).toContain("房間");
     expect(html).toContain("門禁碼");
-    expect(html).toContain("10 字元代碼");
+    expect(html).toContain("4–64 字元（英文字母或數字）");
     expect(html).toContain("登入");
     expect(html).toContain("房間 A");
+    expect(html).toContain('minLength="4"');
+    expect(html).toContain('maxLength="64"');
   });
 
   it("maps the login error code to the active locale", () => {
@@ -86,10 +88,26 @@ describe("localized client forms", () => {
       createElement(AdminResetForm, { locale: "zh-TW", labels: zhTW.admin }),
     );
 
-    expect(html).toContain("新的 10 字元代碼");
+    expect(html).toContain("新的門禁碼（4–64 字元，英文字母或數字；留空則自動產生）");
     expect(html).toContain("重設代碼");
     expect(html).toContain("請選擇房間（A-E）。");
     expect(html).toContain("房間 A");
+    expect(html).toContain('maxLength="64"');
+    expect(html).not.toContain('maxLength="10"');
+  });
+
+  it("maps the invalid-password reset error to the active locale", () => {
+    actionState.value = { status: "error", message: "invalid-password" };
+
+    const zh = renderToStaticMarkup(
+      createElement(AdminResetForm, { locale: "zh-TW", labels: zhTW.admin }),
+    );
+    const enHtml = renderToStaticMarkup(
+      createElement(AdminResetForm, { locale: "en", labels: en.admin }),
+    );
+
+    expect(zh).toContain("請使用 4–64 個英文字母或數字。");
+    expect(enHtml).toContain("Use 4–64 letters or numbers.");
   });
 
   it("renders the localized reset success panel", () => {

@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import type { Dictionary, Locale } from "@/lib/i18n";
-import { ROOM_LETTERS, ROOM_UPPER } from "@/lib/rooms";
+import { ROOM_LETTERS, ROOM_PASSWORD_MAX_LENGTH, ROOM_PASSWORD_MIN_LENGTH, ROOM_UPPER } from "@/lib/rooms";
 import { loginAction } from "./actions";
 import { type LoginState } from "./login-state";
 
@@ -44,8 +44,8 @@ export default function LoginForm({ locale, labels }: LoginFormProps) {
           autoComplete="off"
           spellCheck={false}
           required
-          maxLength={10}
-          minLength={10}
+          maxLength={ROOM_PASSWORD_MAX_LENGTH}
+          minLength={ROOM_PASSWORD_MIN_LENGTH}
           placeholder={labels.codePlaceholder}
           className="w-full rounded border border-slate-500 bg-slate-950 px-3 py-2 font-mono tracking-widest text-slate-100 placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-300"
         />
