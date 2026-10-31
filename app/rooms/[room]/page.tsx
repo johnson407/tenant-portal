@@ -52,7 +52,7 @@ export default async function RoomPage({ params }: { params: Promise<{ room: str
   const data: RoomPlaceholderData = PLACEHOLDER_ROOM_DATA[room];
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-10">
+    <main className="min-h-screen bg-slate-100 px-4 py-10 text-slate-900">
       <div className="mx-auto max-w-2xl space-y-8">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-3xl font-semibold text-slate-900">Room {ROOM_UPPER[room]}</h1>
@@ -73,9 +73,9 @@ export default async function RoomPage({ params }: { params: Promise<{ room: str
 
         <section>
           <h2 className="text-xl font-medium text-slate-800">
-            Bills <span className="text-sm font-normal text-slate-500">(sample data)</span>
+            Bills <span className="text-sm font-normal text-slate-700">(sample data)</span>
           </h2>
-          <ul className="mt-2 divide-y divide-slate-200 rounded border border-slate-200 bg-white">
+          <ul className="mt-2 divide-y divide-slate-300 rounded border border-slate-300 bg-white text-slate-900">
             {data.bills.map((bill) => (
               <li key={bill.label} className="flex items-center justify-between px-4 py-3">
                 <span>{bill.label}</span>
@@ -89,9 +89,9 @@ export default async function RoomPage({ params }: { params: Promise<{ room: str
 
         <section>
           <h2 className="text-xl font-medium text-slate-800">
-            Payments <span className="text-sm font-normal text-slate-500">(sample data)</span>
+            Payments <span className="text-sm font-normal text-slate-700">(sample data)</span>
           </h2>
-          <ul className="mt-2 divide-y divide-slate-200 rounded border border-slate-200 bg-white">
+          <ul className="mt-2 divide-y divide-slate-300 rounded border border-slate-300 bg-white text-slate-900">
             {data.payments.map((payment) => (
               <li key={payment.label} className="flex items-center justify-between px-4 py-3">
                 <span>{payment.label}</span>
@@ -105,19 +105,19 @@ export default async function RoomPage({ params }: { params: Promise<{ room: str
 
         <section>
           <h2 className="text-xl font-medium text-slate-800">
-            Lease dates <span className="text-sm font-normal text-slate-500">(sample data)</span>
+            Lease dates <span className="text-sm font-normal text-slate-700">(sample data)</span>
           </h2>
-          <dl className="mt-2 grid grid-cols-1 gap-2 rounded border border-slate-200 bg-white p-4 sm:grid-cols-3">
+          <dl className="mt-2 grid grid-cols-1 gap-2 rounded border border-slate-300 bg-white p-4 text-slate-900 sm:grid-cols-3">
             <div>
-              <dt className="text-xs text-slate-500">Lease start</dt>
+              <dt className="text-xs text-slate-700">Lease start</dt>
               <dd className="font-mono text-sm">{data.lease.start}</dd>
             </div>
             <div>
-              <dt className="text-xs text-slate-500">Lease end</dt>
+              <dt className="text-xs text-slate-700">Lease end</dt>
               <dd className="font-mono text-sm">{data.lease.end}</dd>
             </div>
             <div>
-              <dt className="text-xs text-slate-500">Renewal decision due</dt>
+              <dt className="text-xs text-slate-700">Renewal decision due</dt>
               <dd className="font-mono text-sm">{data.lease.renewalDue}</dd>
             </div>
           </dl>

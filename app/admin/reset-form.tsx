@@ -35,7 +35,7 @@ export default function AdminResetForm() {
               <select
                 name="room"
                 required
-                className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-slate-400 focus:outline-none"
+                className="w-full rounded border border-slate-500 bg-slate-950 px-3 py-2 text-slate-100 focus:border-slate-400 focus:ring-2 focus:ring-slate-300"
               >
                 {ROOM_LETTERS.map((letter) => (
                   <option key={letter} value={letter}>
@@ -55,7 +55,7 @@ export default function AdminResetForm() {
                 spellCheck={false}
                 maxLength={10}
                 placeholder="e.g. R3turnK3y55"
-                className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono tracking-widest text-slate-100 focus:border-slate-400 focus:outline-none"
+                className="w-full rounded border border-slate-500 bg-slate-950 px-3 py-2 font-mono tracking-widest text-slate-100 placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-300"
               />
             </label>
             {state.status === "error" ? <p className="text-sm text-red-400">{state.message}</p> : null}

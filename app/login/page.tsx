@@ -15,8 +15,8 @@ export default async function LoginPage() {
         <h1 className="text-2xl font-semibold">Tenant sign in</h1>
         <p className="mt-2 text-sm text-slate-400">Select your room and enter your access code.</p>
         <LoginForm />
-        <p className="mt-6 text-xs text-slate-500">
-          Landlord? <Link href="/admin/login" className="underline hover:text-slate-300">Admin area</Link>
+        <p className="mt-6 text-xs text-slate-300">
+          Landlord? <Link href="/admin/login" className="underline hover:text-white">Admin area</Link>
         </p>
       </div>
     </main>

@@ -18,7 +18,7 @@ export default function AdminLoginForm() {
           type="password"
           autoComplete="off"
           required
-          className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-slate-400 focus:outline-none"
+          className="w-full rounded border border-slate-500 bg-slate-950 px-3 py-2 text-slate-100 focus:border-slate-400 focus:ring-2 focus:ring-slate-300"
         />
       </label>
       {state.error ? <p className="text-sm text-red-400">{state.error}</p> : null}
