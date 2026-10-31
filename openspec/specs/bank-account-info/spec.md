@@ -84,7 +84,7 @@ The system SHALL show the configured bank account on each authenticated tenant d
 
 #### Scenario: Read failure hides only the section
 - **WHEN** reading the bank account fails while the tenant dashboard renders
-- **THEN** the bank account section is omitted and the bills, payments, and lease sections still render normally
+- **THEN** the bank account section is omitted and the bills, payments, and header lease facts still render normally
 
 ### Requirement: Bank detail confidentiality
 

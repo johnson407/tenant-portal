@@ -76,6 +76,13 @@ async function renderRoom(room: string, lang = "zh-TW"): Promise<string> {
   return renderToStaticMarkup(ui);
 }
 
+function summaryText(html: string): string | undefined {
+  return html
+    .match(/<summary[^>]*>([\s\S]*?)<\/summary>/)?.[1]
+    .replace(/<[^>]*>/g, "")
+    .trim();
+}
+
 function expectNoPersonalData(html: string) {
   expect(html).not.toMatch(/@[a-z0-9.-]+\.[a-z]{2,}/i);
   expect(html).not.toMatch(/\+886/);
@@ -110,7 +117,6 @@ describe("room dashboard authorization", () => {
     expect(html).toContain("房間 A");
     expect(html).toContain("帳單");
     expect(html).toContain("付款");
-    expect(html).toContain("租約日期");
     expect(html).toContain("期別 2026-10");
     expect(html).toContain("合計 $900");
     expect(html).toContain("租金</dt>");
@@ -143,7 +149,6 @@ describe("room dashboard authorization", () => {
     expect(html).toContain("Room A");
     expect(html).toContain("Bills");
     expect(html).toContain("Payments");
-    expect(html).toContain("Lease dates");
     expect(html).toContain("Period 2026-10");
     expect(html).toContain("Total NT$900");
     expect(html).toContain("Rent</dt>");
@@ -189,6 +194,56 @@ describe("room dashboard authorization", () => {
   });
 });
 
+describe("room dashboard layout", () => {
+  it("renders lease facts inside the header before the bills section", async () => {
+    const zh = await renderRoom("a");
+    const en = await renderRoom("a", "en");
+
+    expect(zh).toMatch(
+      /<header[\s\S]*租約開始[\s\S]*租約結束[\s\S]*續約決定截止日[\s\S]*<\/header>/,
+    );
+    expect(en).toMatch(
+      /<header[\s\S]*Lease start[\s\S]*Lease end[\s\S]*Renewal decision due[\s\S]*<\/header>/,
+    );
+    expect(zh.indexOf("租約開始")).toBeLessThan(zh.indexOf("帳單"));
+    expect(en.indexOf("Lease start")).toBeLessThan(en.indexOf("Bills"));
+    expect(zh).not.toMatch(/<h2[^>]*>租約日期<\/h2>/);
+    expect(en).not.toMatch(/<h2[^>]*>Lease dates<\/h2>/);
+  });
+
+  it("renders payment history in a collapsed disclosure labeled Payments", async () => {
+    const zh = await renderRoom("a");
+    const en = await renderRoom("a", "en");
+
+    expect(zh).toMatch(/<details[^>]*>[\s\S]*<summary[^>]*>/);
+    expect(en).toMatch(/<details[^>]*>[\s\S]*<summary[^>]*>/);
+    expect(summaryText(zh)).toBe("付款");
+    expect(summaryText(en)).toBe("Payments");
+    expect(zh).not.toMatch(/<details[^>]*\sopen(?:[=\s>])/);
+    expect(en).not.toMatch(/<details[^>]*\sopen(?:[=\s>])/);
+
+    const zhDetails = zh.match(/<details[^>]*>[\s\S]*<\/details>/)?.[0] ?? "";
+    const enDetails = en.match(/<details[^>]*>[\s\S]*<\/details>/)?.[0] ?? "";
+    expect(zhDetails).toContain("期別 2026-09");
+    expect(zhDetails).toContain("$700");
+    expect(zhDetails).toContain("已收款 2026年10月5日");
+    expect(enDetails).toContain("Period 2026-09");
+    expect(enDetails).toContain("NT$700");
+    expect(enDetails).toContain("received Oct 5, 2026");
+  });
+
+  it("gives the payments disclosure a visible keyboard focus ring", async () => {
+    const html = await renderRoom("a");
+    const summary = html.match(/<summary[^>]*>/)?.[0] ?? "";
+
+    expect(summary).toContain("focus-visible:ring-2");
+    expect(summary).toContain("focus-visible:ring-slate-700");
+    expect(summary).toContain("focus-visible:ring-offset-2");
+    expect(summary).toContain("focus-visible:ring-offset-slate-100");
+    expect(summary).not.toContain("focus-visible:outline-none");
+  });
+});
+
 describe("room dashboard states", () => {
   it("renders the no-bills, no-payments, and no-lease empty states", async () => {
     mocks.getRoomFeed.mockResolvedValue({
@@ -199,8 +254,8 @@ describe("room dashboard states", () => {
     const html = await renderRoom("a");
 
     expect(html).toContain("尚無帳單。");
-    expect(html).toContain("尚無付款紀錄。");
-    expect(html).toContain("租約日期尚無法取得。");
+    expect(html).toMatch(/<details[^>]*>[\s\S]*尚無付款紀錄。[\s\S]*<\/details>/);
+    expect(html).toMatch(/<header[\s\S]*租約日期尚無法取得。[\s\S]*<\/header>/);
     expect(html).toContain("最後更新");
     expectNoPlaceholderCopy(html);
   });
@@ -214,7 +269,9 @@ describe("room dashboard states", () => {
     expect(html).toContain("請聯絡房東。");
     expect(html).not.toContain("帳單");
     expect(html).not.toContain("付款");
-    expect(html).not.toContain("租約日期");
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("租約開始");
+    expect(html).not.toContain("租約日期尚無法取得。");
     expectNoPlaceholderCopy(html);
   });
 
@@ -227,6 +284,8 @@ describe("room dashboard states", () => {
     expect(html).toContain("Please contact the landlord.");
     expect(html).not.toContain("stack trace secret");
     expect(html).not.toContain("Bills");
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("Lease start");
   });
 
   it("renders a missing lease while keeping bills and payments", async () => {
@@ -239,7 +298,7 @@ describe("room dashboard states", () => {
 
     expect(html).toContain("帳單");
     expect(html).toContain("付款");
-    expect(html).toContain("租約日期尚無法取得。");
+    expect(html).toMatch(/<header[\s\S]*租約日期尚無法取得。[\s\S]*<\/header>/);
   });
 
   it("renders not-available when a lease has no renewal date", async () => {
@@ -251,8 +310,8 @@ describe("room dashboard states", () => {
       },
     });
 
-    expect(await renderRoom("a")).toContain("尚無資料");
-    expect(await renderRoom("a", "en")).toContain("Not available");
+    expect(await renderRoom("a")).toMatch(/<header[\s\S]*尚無資料[\s\S]*<\/header>/);
+    expect(await renderRoom("a", "en")).toMatch(/<header[\s\S]*Not available[\s\S]*<\/header>/);
   });
 });
 
@@ -311,7 +370,7 @@ describe("room dashboard bank account", () => {
 
     expect(html).toContain("帳單");
     expect(html).toContain("付款");
-    expect(html).toContain("租約日期");
+    expect(html).toContain("租約開始");
     expect(html).not.toContain("租金匯款帳戶");
     expect(html).not.toContain("kv secret");
   });

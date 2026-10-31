@@ -52,7 +52,7 @@ The `Leases` tab SHALL expose exactly the header row `room, lease_start, lease_e
 
 #### Scenario: Missing lease row
 - **WHEN** a room has bills but no Leases row
-- **THEN** the lease section shows not available while the room's bills and payments still render
+- **THEN** the dashboard header shows lease dates not available while the room's bills and payments still render
 
 ### Requirement: Read-only Google service-account access
 
@@ -232,7 +232,7 @@ A room with no valid Bills rows SHALL show a distinct no-bills-yet state, not th
 
 #### Scenario: Room has no lease
 - **WHEN** AppFeed has no Leases row for the room
-- **THEN** the lease section shows not available and the room's bills and payments still render
+- **THEN** the dashboard header shows lease dates not available and the room's bills and payments still render
 
 ### Requirement: Generic failure state and safe logging
 

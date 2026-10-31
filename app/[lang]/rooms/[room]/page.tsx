@@ -93,10 +93,38 @@ export default async function RoomPage({ params }: RoomPageProps) {
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-10 text-slate-900">
       <div className="mx-auto max-w-2xl space-y-8">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-3xl font-semibold text-slate-900">
-            {dictionary.room.headingTemplate.replace("{room}", ROOM_UPPER[room])}
-          </h1>
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-semibold text-slate-900">
+              {dictionary.room.headingTemplate.replace("{room}", ROOM_UPPER[room])}
+            </h1>
+            {feed === null ? null : feed.lease === null ? (
+              <p className="mt-2 text-sm text-slate-700">{dictionary.room.emptyLease}</p>
+            ) : (
+              <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                <div>
+                  <dt className="text-xs text-slate-700">{dictionary.room.leaseStart}</dt>
+                  <dd className="font-mono text-sm text-slate-900">
+                    {formatDate(feed.lease.start, lang)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-700">{dictionary.room.leaseEnd}</dt>
+                  <dd className="font-mono text-sm text-slate-900">
+                    {formatDate(feed.lease.end, lang)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-700">{dictionary.room.renewalDue}</dt>
+                  <dd className="font-mono text-sm text-slate-900">
+                    {feed.lease.renewalDue === null
+                      ? dictionary.room.notAvailable
+                      : formatDate(feed.lease.renewalDue, lang)}
+                  </dd>
+                </div>
+              </dl>
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <LocaleSwitcher locale={lang} path={`/rooms/${room}`} tone="light" />
             <form action={logoutAction.bind(null, lang)}>
@@ -219,72 +247,36 @@ export default async function RoomPage({ params }: RoomPageProps) {
             </section>
 
             <section>
-              <h2 className="text-xl font-medium text-slate-800">
-                {dictionary.room.payments}
-              </h2>
-              {feed.payments.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-700">
-                  {dictionary.room.emptyPayments}
-                </p>
-              ) : (
-                <ul className="mt-2 divide-y divide-slate-300 rounded border border-slate-300 bg-white text-slate-900">
-                  {feed.payments.map((payment) => (
-                    <li
-                      key={payment.period}
-                      className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
-                    >
-                      <span className="font-medium">
-                        {dictionary.room.period} {payment.period}
-                      </span>
-                      <span className="font-mono text-sm">
-                        {formatTwd(payment.amount, lang)} -{" "}
-                        {dictionary.room.received}{" "}
-                        {formatDate(payment.receivedOn, lang)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section>
-              <h2 className="text-xl font-medium text-slate-800">
-                {dictionary.room.leaseDates}
-              </h2>
-              {feed.lease === null ? (
-                <p className="mt-2 text-sm text-slate-700">
-                  {dictionary.room.emptyLease}
-                </p>
-              ) : (
-                <dl className="mt-2 grid grid-cols-1 gap-2 rounded border border-slate-300 bg-white p-4 text-slate-900 sm:grid-cols-3">
-                  <div>
-                    <dt className="text-xs text-slate-700">
-                      {dictionary.room.leaseStart}
-                    </dt>
-                    <dd className="font-mono text-sm">
-                      {formatDate(feed.lease.start, lang)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-700">
-                      {dictionary.room.leaseEnd}
-                    </dt>
-                    <dd className="font-mono text-sm">
-                      {formatDate(feed.lease.end, lang)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-700">
-                      {dictionary.room.renewalDue}
-                    </dt>
-                    <dd className="font-mono text-sm">
-                      {feed.lease.renewalDue === null
-                        ? dictionary.room.notAvailable
-                        : formatDate(feed.lease.renewalDue, lang)}
-                    </dd>
-                  </div>
-                </dl>
-              )}
+              <details>
+                <summary className="cursor-pointer rounded text-xl font-medium text-slate-800 focus-visible:ring-2 focus-visible:ring-slate-700 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-100">
+                  <h2 className="inline">
+                    {dictionary.room.payments}
+                  </h2>
+                </summary>
+                {feed.payments.length === 0 ? (
+                  <p className="mt-2 text-sm text-slate-700">
+                    {dictionary.room.emptyPayments}
+                  </p>
+                ) : (
+                  <ul className="mt-2 divide-y divide-slate-300 rounded border border-slate-300 bg-white text-slate-900">
+                    {feed.payments.map((payment) => (
+                      <li
+                        key={payment.period}
+                        className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+                      >
+                        <span className="font-medium">
+                          {dictionary.room.period} {payment.period}
+                        </span>
+                        <span className="font-mono text-sm">
+                          {formatTwd(payment.amount, lang)} -{" "}
+                          {dictionary.room.received}{" "}
+                          {formatDate(payment.receivedOn, lang)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </details>
             </section>
           </>
         )}

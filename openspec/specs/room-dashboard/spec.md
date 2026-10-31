@@ -11,7 +11,7 @@ For each authenticated tenant with a valid session, the system SHALL display a d
 
 #### Scenario: Tenant views own dashboard
 - **WHEN** the tenant authenticated for room `E` opens their dashboard
-- **THEN** the page shows room E's AppFeed open bills, payment history, and lease dates
+- **THEN** the page shows room E's AppFeed open bills, payment history, and lease dates next to the room heading
 
 #### Scenario: Bank account appears alongside AppFeed data
 - **WHEN** the tenant authenticated for room `A` opens their dashboard while a bank account is configured
@@ -43,8 +43,36 @@ For each authenticated tenant with a valid session, the system SHALL display a d
 
 #### Scenario: Missing lease
 - **WHEN** AppFeed has no Leases row for the tenant's room but has valid Bills rows
-- **THEN** the lease section shows not available and the bills and payments still render
+- **THEN** the header shows the localized missing-lease copy and the bills and payments still render
 
 #### Scenario: No placeholder data in production
 - **WHEN** any room dashboard renders in production
 - **THEN** it contains no placeholder amounts, dates, sample-data badge, or sample-data caption
+
+### Requirement: Dashboard lease and payment presentation
+
+The room dashboard SHALL place the room's lease start, lease end, and renewal decision due adjacent to the room heading, and SHALL present payment history inside a disclosure that is collapsed by default. The disclosure MUST work without client-side JavaScript and MUST use the localized payments label as its visible control text.
+
+#### Scenario: Lease facts appear next to the room heading
+- **WHEN** an authenticated tenant with a valid lease opens their dashboard
+- **THEN** the lease start, lease end, and renewal decision due render next to the room heading, and no separate trailing lease section is rendered
+
+#### Scenario: Payment history starts collapsed
+- **WHEN** the dashboard renders with one or more recorded payments
+- **THEN** the payments disclosure is collapsed, so no payment row is visible until the tenant expands it
+
+#### Scenario: Tenant expands payment history
+- **WHEN** the tenant activates the payments disclosure
+- **THEN** the recorded payments become visible with the existing period, amount, and received-date formatting for the active locale
+
+#### Scenario: Missing lease next to the heading
+- **WHEN** AppFeed loads successfully but has no lease for the tenant's room
+- **THEN** the header area shows the localized missing-lease copy while bills and payments still render
+
+#### Scenario: Lease without a renewal date
+- **WHEN** the lease exists but its renewal decision due date is absent
+- **THEN** the header lease facts show the localized not-available value for the renewal date
+
+#### Scenario: No lease facts when the feed is unavailable
+- **WHEN** AppFeed is unavailable
+- **THEN** the header renders no lease facts and the localized generic unavailable notice remains
