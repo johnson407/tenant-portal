@@ -23,7 +23,7 @@ function isPathWithin(path: string, section: string): boolean {
   return path === section || path.startsWith(`${section}/`);
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const localized = splitLocale(request.nextUrl.pathname);
 
   if (!localized) {

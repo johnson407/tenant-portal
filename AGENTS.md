@@ -37,12 +37,12 @@ Next.js 16 App Router app: rooms A–E sign in with a 10-character code and see 
 - Every page lives under `app/[lang]/`, with `zh-TW` (default) and `en` selected by the first URL segment. Typed dictionaries, locale helpers, and `Intl` formatting are in `lib/i18n/`; set page copy from the dictionary rather than hard-coding English.
 - Bare paths redirect to the default locale (for example `/login` → `/zh-TW/login`). Auth redirects stay in the active locale (`/{locale}/login`, `/{locale}/admin/login`), and locale values received by Server Actions are validated with `isLocale()` before being used as a path prefix.
 - Auth is a stateless HS256 JWT in the `tp_session` cookie (`lib/session.ts`), valid for 7 days with `httpOnly`/`SameSite=Lax`. Cookie helpers live in `lib/session-cookies.ts`.
-- `middleware.ts` normalizes the locale and guards `/{locale}/rooms/*` and `/{locale}/admin/*`, and pages re-check: room match plus Redis session version for tenants, `isAdminSession()` for admin. Admin auth compares the shared `ADMIN_PASSWORD` env value; there are no user accounts.
+- `proxy.ts` normalizes the locale and guards `/{locale}/rooms/*` and `/{locale}/admin/*`, and pages re-check: room match plus Redis session version for tenants, `isAdminSession()` for admin. Admin auth compares the shared `ADMIN_PASSWORD` env value; there are no user accounts.
 - An admin code reset bumps `room:<letter>:session-version`, invalidating that room's existing sessions. Logout deliberately does not bump it; logout is browser-local.
 - Redis also holds rate-limit counters with escalating lockouts. If Redis is unavailable, fail with a generic error rather than bypassing the check.
 - Server Actions live in `app/**/actions.ts` and are POST-only. Forms needing pending/error state use client components with `useActionState`; logout uses plain server-rendered forms.
 - Placeholder dashboard data is in `lib/placeholder-data.ts`. Never add tenant names, phone numbers, emails, or plaintext codes anywhere.
-- `next.config.ts` enables `cacheComponents` and `partialPrefetching`; protected pages set `export const instant = false`. The build warns that the `middleware` convention is deprecated in favor of `proxy.ts`; that warning is expected until the file is migrated.
+- `next.config.ts` enables `cacheComponents` and `partialPrefetching`; protected pages set `export const instant = false`.
 
 ## Testing
 
