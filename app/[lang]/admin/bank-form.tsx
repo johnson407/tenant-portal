@@ -59,11 +59,11 @@ export default function AdminBankForm({ locale, labels, initialValues }: AdminBa
   }
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-4 rounded-lg border border-slate-800 bg-slate-900 p-6 text-slate-100">
       <h2 className="text-xl font-semibold">{labels.sectionHeading}</h2>
       <form
         action={formAction}
-        className="space-y-4 rounded-lg border border-slate-800 bg-slate-900 p-6"
+        className="space-y-4"
       >
         <label className="block">
           <span className="mb-1 block text-sm text-slate-300">{labels.bankName}</span>

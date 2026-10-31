@@ -46,10 +46,10 @@ export default function AdminResetForm({ locale, labels }: AdminResetFormProps) 
       : null;
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-4 rounded-lg border border-slate-800 bg-slate-900 p-6 text-slate-100">
       <h2 className="text-xl font-semibold">{labels.resetSectionHeading}</h2>
       <div className="space-y-6">
-        <form action={formAction} className="space-y-4 rounded-lg border border-slate-800 bg-slate-900 p-6">
+        <form action={formAction} className="space-y-4">
         {state.status === "idle" || state.status === "error" ? (
           <>
             <label className="block">

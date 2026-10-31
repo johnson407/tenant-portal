@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import LocaleSwitcher from "@/app/[lang]/locale-switcher";
+import AuthShell from "@/app/[lang]/auth-shell";
 import { getDictionary, isLocale, localePath } from "@/lib/i18n";
 import { getSessionClaims } from "@/lib/session-cookies";
 import AdminLoginForm from "./admin-login-form";
@@ -26,15 +26,13 @@ export default async function AdminLoginPage({ params }: AdminLoginPageProps) {
   if (claims?.role === "admin") redirect(localePath(lang, "/admin"));
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
-      <div className="w-full max-w-sm rounded-lg bg-slate-900 p-8 text-slate-100 shadow-xl">
-        <div className="flex items-start justify-between gap-3">
-          <h1 className="text-2xl font-semibold">{dictionary.adminLogin.heading}</h1>
-          <LocaleSwitcher locale={lang} path="/admin/login" />
-        </div>
-        <p className="mt-2 text-sm text-slate-400">{dictionary.adminLogin.subtitle}</p>
-        <AdminLoginForm locale={lang} labels={dictionary.adminLogin} />
-      </div>
-    </main>
+    <AuthShell
+      locale={lang}
+      path="/admin/login"
+      heading={dictionary.adminLogin.heading}
+      subtitle={dictionary.adminLogin.subtitle}
+    >
+      <AdminLoginForm locale={lang} labels={dictionary.adminLogin} />
+    </AuthShell>
   );
 }

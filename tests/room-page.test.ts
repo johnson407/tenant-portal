@@ -134,9 +134,9 @@ describe("room dashboard authorization", () => {
     expect(html).toContain("續約決定截止日");
     expect(html).toContain("2026年11月30日");
     expect(html).toContain('href="/en/rooms/a"');
-    expect(html).toContain("hover:bg-slate-200");
-    expect(html).toContain("focus-visible:ring-slate-700");
-    expect(html).toContain("focus-visible:ring-offset-slate-100");
+    expect(html).toContain("hover:bg-slate-800");
+    expect(html).toContain("focus-visible:ring-slate-300");
+    expect(html).toContain("focus-visible:ring-offset-slate-950");
     expect(html).not.toContain("Not authorized");
     expectNoPlaceholderCopy(html);
     expectNoPersonalData(html);
@@ -237,10 +237,27 @@ describe("room dashboard layout", () => {
     const summary = html.match(/<summary[^>]*>/)?.[0] ?? "";
 
     expect(summary).toContain("focus-visible:ring-2");
-    expect(summary).toContain("focus-visible:ring-slate-700");
+    expect(summary).toContain("focus-visible:ring-slate-300");
     expect(summary).toContain("focus-visible:ring-offset-2");
-    expect(summary).toContain("focus-visible:ring-offset-slate-100");
+    expect(summary).toContain("focus-visible:ring-offset-slate-900");
     expect(summary).not.toContain("focus-visible:outline-none");
+  });
+
+  it("renders the lease stat strip, bill card badge, and responsive two-column grid", async () => {
+    const html = await renderRoom("a");
+
+    expect(html).toContain('class="grid gap-4 rounded-lg border border-slate-800 bg-slate-900 p-4 text-slate-100 sm:grid-cols-3 sm:divide-x sm:divide-slate-800"');
+    expect(html).toContain("lg:grid-cols-[minmax(0,1.65fr)_minmax(20rem,1fr)]");
+    expect(html).toContain('href="/zh-TW/rooms/a"');
+    expect(html).toContain("rounded-md border border-slate-800 bg-slate-950/50 p-4");
+    expect(html).toMatch(
+      /<span class="[^"]*rounded-full[^"]*bg-amber-950[^"]*">未付款<\/span>/,
+    );
+
+    const english = await renderRoom("a", "en");
+    expect(english).toMatch(
+      /<span class="[^"]*rounded-full[^"]*bg-amber-950[^"]*">open<\/span>/,
+    );
   });
 });
 
@@ -400,8 +417,15 @@ describe("room dashboard denial", () => {
 
     expect(html).toContain("未獲授權");
     expect(html).toContain("您無權檢視此房間的儀表板。");
+    expect(html).toContain("返回您的儀表板");
     expect(html).toContain("登出");
+    expect(html.split("登出")).toHaveLength(2);
     expect(html).toContain('href="/zh-TW"');
+    expect(html).toContain(
+      "rounded-lg border border-slate-800 bg-slate-900 p-8 text-center text-slate-100",
+    );
+    expect(html).toContain("<header");
+    expect(html).toContain("<main");
     expect(html).not.toContain("房間 B");
     expect(html).not.toContain("70000");
     expect(html).not.toContain(BANK.recipientName);
@@ -417,7 +441,8 @@ describe("room dashboard denial", () => {
     const html = await renderRoom("a", "en");
 
     expect(html).toContain("Not authorized");
-    expect(html).toContain("Log out");
+    expect(html).toContain("Back to your dashboard");
+    expect(html.split("Log out")).toHaveLength(2);
     expect(html).not.toContain("Bills");
     expect(mocks.getRoomFeed).not.toHaveBeenCalled();
   });

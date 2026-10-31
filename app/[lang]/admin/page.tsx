@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import LocaleSwitcher from "@/app/[lang]/locale-switcher";
-import { logoutAction } from "@/app/[lang]/logout-actions";
+import PortalShell from "@/app/[lang]/portal-shell";
+import SectionCard from "@/app/[lang]/section-card";
 import { type BankAccount, getBankAccount } from "@/lib/bank-account";
 import { getDictionary, isLocale, localePath } from "@/lib/i18n";
 import { isAdminSession } from "@/lib/session-cookies";
@@ -34,33 +34,27 @@ export default async function AdminPage({ params }: AdminPageProps) {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-10 text-slate-100">
-      <div className="mx-auto max-w-xl space-y-6">
-        <header className="flex items-center justify-between gap-4">
-          <h1 className="text-3xl font-semibold">{dictionary.admin.heading}</h1>
-          <div className="flex items-center gap-3">
-            <LocaleSwitcher locale={lang} path="/admin" />
-            <form action={logoutAction.bind(null, lang)}>
-              <button
-                type="submit"
-                className="rounded border border-slate-500 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-slate-300"
-              >
-                {dictionary.common.logOut}
-              </button>
-            </form>
-          </div>
-        </header>
+    <PortalShell
+      locale={lang}
+      path="/admin"
+      brandHref={localePath(lang, "/admin")}
+      context={dictionary.admin.heading}
+      showLogout
+    >
+      <header className="space-y-2">
+        <h1 className="text-3xl font-semibold text-slate-100">
+          {dictionary.admin.heading}
+        </h1>
         <p className="text-sm text-slate-400">{dictionary.admin.subtitle}</p>
+      </header>
+      <div className="mt-8 grid gap-6 lg:grid-cols-2 lg:items-start">
         <AdminResetForm locale={lang} labels={dictionary.admin} />
         {bankUnavailable ? (
-          <section className="space-y-4">
-            <h2 className="text-xl font-semibold">
-              {dictionary.admin.bank.sectionHeading}
-            </h2>
-            <p className="rounded-lg border border-slate-700 bg-slate-900 p-6 text-sm text-slate-300">
+          <SectionCard title={dictionary.admin.bank.sectionHeading}>
+            <p className="text-sm text-slate-300">
               {dictionary.admin.bank.unavailable}
             </p>
-          </section>
+          </SectionCard>
         ) : (
           <AdminBankForm
             locale={lang}
@@ -69,6 +63,6 @@ export default async function AdminPage({ params }: AdminPageProps) {
           />
         )}
       </div>
-    </main>
+    </PortalShell>
   );
 }

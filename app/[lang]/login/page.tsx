@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import LocaleSwitcher from "@/app/[lang]/locale-switcher";
+import AuthShell from "@/app/[lang]/auth-shell";
 import { getDictionary, isLocale, localePath } from "@/lib/i18n";
 import { getTenantRoom } from "@/lib/session-cookies";
 import LoginForm from "./login-form";
@@ -24,14 +24,12 @@ export default async function LoginPage({ params }: LoginPageProps) {
   if (await getTenantRoom()) redirect(localePath(lang, "/"));
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
-      <div className="w-full max-w-sm rounded-lg bg-slate-900 p-8 text-slate-100 shadow-xl">
-        <div className="flex items-start justify-between gap-3">
-          <h1 className="text-2xl font-semibold">{dictionary.login.heading}</h1>
-          <LocaleSwitcher locale={lang} path="/login" />
-        </div>
-        <p className="mt-2 text-sm text-slate-400">{dictionary.login.subtitle}</p>
-        <LoginForm locale={lang} labels={dictionary.login} />
+    <AuthShell
+      locale={lang}
+      path="/login"
+      heading={dictionary.login.heading}
+      subtitle={dictionary.login.subtitle}
+      footer={
         <p className="mt-6 text-xs text-slate-300">
           {dictionary.login.landlordPrompt}{" "}
           <Link
@@ -41,7 +39,9 @@ export default async function LoginPage({ params }: LoginPageProps) {
             {dictionary.login.adminArea}
           </Link>
         </p>
-      </div>
-    </main>
+      }
+    >
+      <LoginForm locale={lang} labels={dictionary.login} />
+    </AuthShell>
   );
 }

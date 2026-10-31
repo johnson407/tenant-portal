@@ -41,6 +41,9 @@ describe("localized admin sign-in page", () => {
     expect(html).toContain("管理員登入");
     expect(html).toContain("僅限房東存取。");
     expect(html).toContain('href="/en/admin/login"');
+    expect(html).toContain("lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]");
+    expect(html).toContain("租客入口");
+    expect(html).toContain("查看租金帳單、付款與租約日期。");
     expect(html).not.toContain("Admin sign in");
   });
 
@@ -52,6 +55,9 @@ describe("localized admin sign-in page", () => {
     expect(html).toContain("Admin sign in");
     expect(html).toContain("Landlord access only.");
     expect(html).toContain('href="/zh-TW/admin/login"');
+    expect(html).toContain("lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]");
+    expect(html).toContain("Tenant Portal");
+    expect(html).toContain("View rent bills, payments, and lease dates.");
   });
 
   it("provides a localized page title", async () => {

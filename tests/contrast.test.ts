@@ -5,9 +5,7 @@ import { describe, expect, it } from "vitest";
 
 // Tailwind v4 palette values (hex) for every colour used by the audited views.
 const COLOURS = {
-  "slate-50": "#f8fafc",
   "slate-100": "#f1f5f9",
-  "slate-200": "#e2e8f0",
   "slate-300": "#cbd5e1",
   "slate-400": "#94a3b8",
   "slate-500": "#64748b",
@@ -19,13 +17,10 @@ const COLOURS = {
   "amber-50": "#fffbeb",
   "amber-200": "#fde68a",
   "amber-500": "#f59e0b",
-  "amber-900": "#78350f",
+  "amber-950": "#451a03",
   "red-400": "#f87171",
   "red-700": "#b91c1c",
   white: "#ffffff",
-  // Body foreground values from app/globals.css (not Tailwind palette entries).
-  "inherited-dark": "#ededed",
-  "inherited-light": "#171717",
 } as const;
 
 type Colour = keyof typeof COLOURS;
@@ -95,6 +90,8 @@ type TextPair = { label: string; fg: Colour; bg: Colour; expected: number };
 type NonTextPair = TextPair;
 
 const LOGIN_TEXT_PAIRS: TextPair[] = [
+  { label: "login brand panel heading slate-100 on slate-900", fg: "slate-100", bg: "slate-900", expected: 16.3 },
+  { label: "login brand panel description slate-300 on slate-900", fg: "slate-300", bg: "slate-900", expected: 12.02 },
   { label: "login footer slate-300 on slate-900", fg: "slate-300", bg: "slate-900", expected: 12.02 },
   { label: "login Admin-area hover white on slate-900", fg: "white", bg: "slate-900", expected: 17.85 },
   { label: "login heading slate-100 on slate-900", fg: "slate-100", bg: "slate-900", expected: 16.3 },
@@ -141,22 +138,17 @@ describe("tenant sign-in page", () => {
 });
 
 const ROOM_TEXT_PAIRS: TextPair[] = [
-  { label: "room heading slate-900 on slate-100", fg: "slate-900", bg: "slate-100", expected: 16.3 },
-  { label: "room section heading slate-800 on slate-100", fg: "slate-800", bg: "slate-100", expected: 13.35 },
-  { label: "room section heading slate-800 on white", fg: "slate-800", bg: "white", expected: 14.63 },
-  { label: "room bill/payment row slate-900 on white", fg: "slate-900", bg: "white", expected: 17.85 },
-  { label: "room lease value slate-900 on white", fg: "slate-900", bg: "white", expected: 17.85 },
-  { label: "room last-updated caption slate-700 on slate-100", fg: "slate-700", bg: "slate-100", expected: 9.45 },
-  { label: "room breakdown label slate-700 on white", fg: "slate-700", bg: "white", expected: 10.35 },
-  { label: "room lease label slate-700 on white", fg: "slate-700", bg: "white", expected: 10.35 },
-  { label: "room body slate-900 on slate-100", fg: "slate-900", bg: "slate-100", expected: 16.3 },
-  { label: "room light-mode inherited #171717 on slate-100", fg: "inherited-light", bg: "slate-100", expected: 16.36 },
-  { label: "room light-mode inherited #171717 on white", fg: "inherited-light", bg: "white", expected: 17.93 },
-];
-
-const ROOM_INHERITANCE_FAILURES: TextPair[] = [
-  { label: "room dark-mode inherited #ededed on white", fg: "inherited-dark", bg: "white", expected: 1.17 },
-  { label: "room dark-mode inherited #ededed on slate-100", fg: "inherited-dark", bg: "slate-100", expected: 1.07 },
+  { label: "room heading slate-100 on slate-950", fg: "slate-100", bg: "slate-950", expected: 18.41 },
+  { label: "room section heading slate-100 on slate-900", fg: "slate-100", bg: "slate-900", expected: 16.3 },
+  { label: "room payment row slate-100 on slate-900", fg: "slate-100", bg: "slate-900", expected: 16.3 },
+  { label: "room bill row slate-100 on at least slate-900", fg: "slate-100", bg: "slate-900", expected: 16.3 },
+  { label: "room lease value slate-100 on slate-900", fg: "slate-100", bg: "slate-900", expected: 16.3 },
+  { label: "room last-updated caption slate-300 on slate-950", fg: "slate-300", bg: "slate-950", expected: 13.59 },
+  { label: "room breakdown label slate-300 on slate-950", fg: "slate-300", bg: "slate-950", expected: 13.59 },
+  { label: "room lease label slate-300 on slate-900", fg: "slate-300", bg: "slate-900", expected: 12.02 },
+  { label: "room secondary body slate-300 on slate-950", fg: "slate-300", bg: "slate-950", expected: 13.59 },
+  { label: "room muted body slate-400 on slate-900", fg: "slate-400", bg: "slate-900", expected: 6.96 },
+  { label: "room status badge amber-200 on amber-950", fg: "amber-200", bg: "amber-950", expected: 12.03 },
 ];
 
 describe("room dashboard", () => {
@@ -165,39 +157,65 @@ describe("room dashboard", () => {
     expect(ratio(fg, bg)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it.each(ROOM_INHERITANCE_FAILURES)("$label is why the page declares slate-900", ({ fg, bg, expected }) => {
-    expect(ratio(fg, bg)).toBe(expected);
-    expect(ratio(fg, bg)).toBeLessThan(4.5);
+  it("fixes the dark base tokens and removes the OS-dependent override", () => {
+    const file = "app/globals.css";
+
+    sourceHas(file, "--background: #020617");
+    sourceHas(file, "--foreground: #f1f5f9");
+    sourceHas(file, "color-scheme: dark");
+    sourceLacks(file, "prefers-color-scheme");
+    sourceHas("app/[lang]/layout.tsx", "bg-slate-950 text-slate-100");
   });
 
-  it("darkens the decorative card border from slate-200 to slate-300", () => {
-    expect(ratio("slate-200", "white")).toBe(1.23);
-    expect(ratio("slate-300", "white")).toBe(1.48);
-    expect(ratio("slate-300", "white")).toBeGreaterThan(ratio("slate-200", "white"));
-  });
-
-  it("declares an explicit foreground on the page and each card", () => {
+  it("uses the dark shell, stat strip, bill cards, and status badge", () => {
     const file = "app/[lang]/rooms/[room]/page.tsx";
 
-    sourceHas(file, "min-h-screen bg-slate-100 px-4 py-10 text-slate-900");
-    expect(
-      sourceCount(
-        file,
-        "divide-y divide-slate-300 rounded border border-slate-300 bg-white text-slate-900",
-      ),
-    ).toBe(2);
-    sourceHas(file, "rounded border border-slate-300 bg-white p-4 text-slate-900");
-    sourceHas(file, "rounded border border-slate-300 bg-white p-6 text-slate-900");
+    sourceHas(file, "lg:grid-cols-[minmax(0,1.65fr)_minmax(20rem,1fr)]");
+    sourceHas(file, "sm:grid-cols-3");
+    sourceHas(file, "rounded-md border border-slate-800 bg-slate-950/50 p-4");
+    sourceHas(file, "rounded-md border border-dashed border-slate-700 bg-slate-950/50 p-4");
+    sourceHas(
+      file,
+      "rounded-full bg-amber-950 px-2.5 py-1 text-xs font-medium text-amber-200",
+    );
+    sourceLacks(file, "bg-slate-100");
+    sourceLacks(file, "bg-white");
+    sourceLacks(file, "text-slate-900");
+    sourceLacks(file, "border-slate-300");
+    sourceLacks(file, "divide-slate-300");
+    sourceLacks(file, "text-slate-700");
+  });
+});
 
-    sourceLacks(file, "text-sm font-normal text-slate-700");
-    expect(sourceCount(file, "text-xs text-slate-700")).toBe(9);
-    sourceLacks(file, "text-slate-500");
-    sourceLacks(file, "border-slate-200");
-    sourceLacks(file, "divide-slate-200");
+const DENIAL_TEXT_PAIRS: TextPair[] = [
+  { label: "denial heading slate-100 on slate-900", fg: "slate-100", bg: "slate-900", expected: 16.3 },
+  { label: "denial message slate-400 on slate-900", fg: "slate-400", bg: "slate-900", expected: 6.96 },
+  { label: "denial back link slate-300 on slate-900", fg: "slate-300", bg: "slate-900", expected: 12.02 },
+  { label: "denial back link hover white on slate-900", fg: "white", bg: "slate-900", expected: 17.85 },
+];
+
+describe("not-authorized view", () => {
+  it.each(DENIAL_TEXT_PAIRS)("$label meets 4.5:1", ({ fg, bg, expected }) => {
+    expect(ratio(fg, bg)).toBe(expected);
+    expect(ratio(fg, bg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("renders the denial card inside the shared shell", () => {
+    const file = "app/[lang]/rooms/[room]/page.tsx";
+
+    sourceHas(file, "PortalShell");
+    sourceHas(file, "centerContent");
+    sourceHas(
+      file,
+      "rounded-lg border border-slate-800 bg-slate-900 p-8 text-center text-slate-100",
+    );
+    sourceHas(file, "text-sm text-slate-300 underline underline-offset-2 hover:text-white");
   });
 });
 
 const ADMIN_LOGIN_TEXT_PAIRS: TextPair[] = [
+  { label: "admin login brand panel heading slate-100 on slate-900", fg: "slate-100", bg: "slate-900", expected: 16.3 },
+  { label: "admin login brand panel description slate-300 on slate-900", fg: "slate-300", bg: "slate-900", expected: 12.02 },
   { label: "admin login heading slate-100 on slate-900", fg: "slate-100", bg: "slate-900", expected: 16.3 },
   { label: "admin login subtitle slate-400 on slate-900", fg: "slate-400", bg: "slate-900", expected: 6.96 },
   { label: "admin login label slate-300 on slate-900", fg: "slate-300", bg: "slate-900", expected: 12.02 },
@@ -302,6 +320,36 @@ describe("admin reset page", () => {
     expect(sourceCount(file, "border border-slate-500")).toBe(1);
     expect(sourceCount(file, "text-sm text-slate-300")).toBe(4);
     expect(sourceCount(file, "text-xs text-slate-400")).toBe(2);
+  });
+});
+
+const ADMIN_CONSOLE_TEXT_PAIRS: TextPair[] = [
+  { label: "admin page heading slate-100 on slate-950", fg: "slate-100", bg: "slate-950", expected: 18.41 },
+  { label: "admin page subtitle slate-400 on slate-950", fg: "slate-400", bg: "slate-950", expected: 7.87 },
+  { label: "admin card heading slate-100 on slate-900", fg: "slate-100", bg: "slate-900", expected: 16.3 },
+  { label: "admin card body slate-300 on slate-900", fg: "slate-300", bg: "slate-900", expected: 12.02 },
+];
+
+describe("admin console layout", () => {
+  it.each(ADMIN_CONSOLE_TEXT_PAIRS)("$label meets 4.5:1", ({ fg, bg, expected }) => {
+    expect(ratio(fg, bg)).toBe(expected);
+    expect(ratio(fg, bg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("uses the dark shell and a two-column card grid", () => {
+    const page = "app/[lang]/admin/page.tsx";
+
+    sourceHas(page, "PortalShell");
+    sourceHas(page, "lg:grid-cols-2");
+    sourceHas(page, "lg:items-start");
+    sourceHas(
+      "app/[lang]/admin/reset-form.tsx",
+      "rounded-lg border border-slate-800 bg-slate-900 p-6 text-slate-100",
+    );
+    sourceHas(
+      "app/[lang]/admin/bank-form.tsx",
+      "rounded-lg border border-slate-800 bg-slate-900 p-6 text-slate-100",
+    );
   });
 });
 

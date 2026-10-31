@@ -68,7 +68,10 @@ describe("localized admin page", () => {
     expect(html).toContain("重設房間門禁碼，並維護租客看到的租金匯款帳戶。");
     expect(html).toContain("登出");
     expect(html).toContain('href="/en/admin"');
+    expect(html).toContain('href="/zh-TW/admin"');
     expect(html).toContain("focus-visible:ring-slate-300");
+    expect(html).toContain("lg:grid-cols-2");
+    expect(html).toContain("lg:items-start");
     expect(html).toMatch(/<header[\s\S]*登出[\s\S]*<\/header>/);
     expect(mocks.redirect).not.toHaveBeenCalled();
   });
@@ -83,6 +86,7 @@ describe("localized admin page", () => {
     expect(html).toContain("Reset room access codes and maintain the bank account shown to tenants.");
     expect(html).toContain("Log out");
     expect(html).toContain('href="/zh-TW/admin"');
+    expect(html).toContain('href="/en/admin"');
   });
 
   it("provides a localized page title", async () => {
