@@ -15,6 +15,7 @@ Next.js 16 App Router app: rooms A–E sign in with a 10-character code and see 
 ## Commands
 
 - `npm run dev` — Turbopack dev server. `next dev` re-adds the managed block above; keep it.
+- `npm run dev:kv` — in-memory Upstash-compatible KV for local previews (`127.0.0.1:8081`, override with `LOCAL_KV_PORT`). Dev only: no auth, no persistence. Point `KV_REST_API_URL` at it and set any non-empty `KV_REST_API_TOKEN`.
 - `npm test` — Vitest. Only `tests/**/*.test.ts` runs; Playwright is excluded.
 - Single test: `npx vitest run tests/login-action.test.ts`, optionally with `-t "name"`.
 - Typecheck: `npx tsc --noEmit`. There is no lint script; `npm run build` also runs TypeScript.
@@ -26,7 +27,8 @@ Next.js 16 App Router app: rooms A–E sign in with a 10-character code and see 
 ## Environment
 
 - Copy `.env.example` to `.env.local`. Required: `SESSION_SECRET`, `ADMIN_PASSWORD`, `ROOM_CODE_HASH_A`…`E`, and `KV_REST_API_URL`/`KV_REST_API_TOKEN`.
-- Upstash Redis is required at runtime. Room login, bcrypt code storage, per-room session versions, and rate limits all fail closed without it; unit tests mock it.
+- Escape `$` as `\$` in `.env` values: Next.js expands `$NAME`, which otherwise mangles bcrypt hashes like `$2b$12$…`.
+- Upstash Redis is required at runtime. Room login, bcrypt code storage, per-room session versions, and rate limits all fail closed without it; unit tests mock it. For local previews without an Upstash account, run `npm run dev:kv` and set `KV_REST_API_URL=http://127.0.0.1:8081` plus any non-empty `KV_REST_API_TOKEN`.
 - Plaintext room codes must never be committed. Generate hashes with `node scripts/hash-codes.mjs --code-into=a`.
 - Vercel injects `KV_REST_*` in production; do not assume a local Redis there.
 

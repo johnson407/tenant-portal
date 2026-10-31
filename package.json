@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "NEXT_TELEMETRY_DISABLED=1 next dev",
+    "dev:kv": "node scripts/local-kv.mjs",
     "build": "NEXT_TELEMETRY_DISABLED=1 next build",
     "start": "next start",
     "test": "vitest run",
