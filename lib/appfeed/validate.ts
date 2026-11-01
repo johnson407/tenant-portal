@@ -1,7 +1,9 @@
 import { isRoomLetter, type RoomLetter } from "../rooms";
+import { isRenewalReminderDue } from "./dates";
 import type {
   AppFeedSnapshot,
   FeedBill,
+  LeaseRenewal,
   FeedLease,
   FeedPayment,
   FeedResult,
@@ -30,6 +32,8 @@ export const BILLS_HEADER = [
   "electricity_start",
   "electricity_end",
   "electricity_rate",
+  "confirmed_on",
+  "confirm_note",
 ] as const;
 
 export const LEASES_HEADER = [
@@ -47,9 +51,10 @@ export const REPAIRS_HEADER = [
   "submitted_on",
   "status",
   "done_on",
+  "done_note",
 ] as const;
 
-export const REPAIRS_RANGE = "Repairs!A:G";
+export const REPAIRS_RANGE = "Repairs!A:H";
 
 export const REPAIR_CATEGORIES = [
   "plumbing",
@@ -93,6 +98,8 @@ export type BillRow = {
   paidOn: string | null;
   claimedOn: string | null;
   bankLast5: string | null;
+  confirmedOn: string | null;
+  confirmNote: string | null;
   waterMeter: MeterGroup | null;
   electricityMeter: MeterGroup | null;
 };
@@ -112,6 +119,7 @@ export type RepairRow = {
   submittedOn: string;
   status: RepairStatus;
   doneOn: string | null;
+  doneNote: string | null;
 };
 
 type RoomErrorCounts = { bills: number; leases: number };
@@ -165,10 +173,14 @@ function parseBillRow(row: unknown[]): BillRow | null {
   const paidOnText = cellText(row[6]);
   const claimedOnText = cellText(row[7]);
   const bankLast5Text = cellText(row[8]);
+  const confirmedOnText = cellText(row[15]);
+  const confirmNoteText = cellText(row[16]);
 
   const paidOn = paidOnText === "" ? null : paidOnText;
   const claimedOn = claimedOnText === "" ? null : claimedOnText;
   const bankLast5 = bankLast5Text === "" ? null : bankLast5Text;
+  const confirmedOn = confirmedOnText === "" ? null : confirmedOnText;
+  const confirmNote = confirmNoteText === "" ? null : confirmNoteText;
 
   if (
     !PERIOD_PATTERN.test(period) ||
@@ -185,6 +197,15 @@ function parseBillRow(row: unknown[]): BillRow | null {
   if ((claimedOn === null) !== (bankLast5 === null)) return null;
   if (claimedOn !== null && !isRealIsoDate(claimedOn)) return null;
   if (bankLast5 !== null && !BANK_LAST5_PATTERN.test(bankLast5)) return null;
+
+  if (confirmedOn !== null && !isRealIsoDate(confirmedOn)) return null;
+  if (confirmNote !== null && !isValidNote(confirmNote)) return null;
+  if (confirmNote !== null && confirmedOn === null) return null;
+  if (confirmedOn !== null) {
+    if (claimedOn === null || bankLast5 === null) return null;
+    if (confirmedOn < claimedOn) return null;
+    if (paidOn !== null && confirmedOn < paidOn) return null;
+  }
 
   const waterMeter = parseMeterGroup(row[9], row[10], row[11], water.value);
   if (!waterMeter.ok) return null;
@@ -206,6 +227,8 @@ function parseBillRow(row: unknown[]): BillRow | null {
     paidOn,
     claimedOn,
     bankLast5,
+    confirmedOn,
+    confirmNote,
     waterMeter: waterMeter.value,
     electricityMeter: electricityMeter.value,
   };
@@ -216,12 +239,12 @@ export function isRepairCategory(value: string): value is RepairCategory {
 }
 
 /**
- * Checks a trimmed repair note. The note must be printable, short, and free of
- * the personal data that the system can detect: emails, URLs, and long digit
- * runs. Names and written addresses cannot be detected; the form warns against
- * them and the note is never logged.
+ * Checks a trimmed note. The note must be printable, short, and free of the
+ * personal data that the system can detect: emails, URLs, and long digit runs.
+ * Names and written addresses cannot be detected; the forms warn against them
+ * and notes are never logged.
  */
-export function isValidRepairNote(value: string): boolean {
+export function isValidNote(value: string): boolean {
   if (CONTROL_CHARACTER_PATTERN.test(value)) return false;
 
   const note = value.trim();
@@ -236,6 +259,16 @@ export function isValidRepairNote(value: string): boolean {
   if (URL_PATTERN.test(normalized)) return false;
   if (LONG_DIGIT_RUN_PATTERN.test(normalized)) return false;
   return true;
+}
+
+/** Checks a repair note. Kept as the public name used by the repair flow. */
+export function isValidRepairNote(value: string): boolean {
+  return isValidNote(value);
+}
+
+/** Checks an optional note. A blank value is allowed; any other value must pass. */
+export function isValidOptionalNote(value: string): boolean {
+  return value.trim() === "" || isValidNote(value);
 }
 
 /** Parses one padded Repairs row. Returns null when any cell fails a rule. */
@@ -261,9 +294,13 @@ export function parseRepairRow(row: unknown[]): RepairRow | null {
 
   const doneOnText = cellText(row[6]);
   const doneOn = doneOnText === "" ? null : doneOnText;
+  const doneNoteText = cellText(row[7]);
+  const doneNote = doneNoteText === "" ? null : doneNoteText;
+
+  if (doneNote !== null && !isValidNote(doneNote)) return null;
 
   if (status === "pending") {
-    if (doneOn !== null) return null;
+    if (doneOn !== null || doneNote !== null) return null;
   } else if (
     doneOn === null ||
     !isRealIsoDate(doneOn) ||
@@ -280,6 +317,7 @@ export function parseRepairRow(row: unknown[]): RepairRow | null {
     submittedOn,
     status,
     doneOn,
+    doneNote,
   };
 }
 
@@ -621,6 +659,38 @@ export function buildPendingClaims(
     );
 }
 
+/**
+ * Projects leases inside the 60-day renewal window for the admin banner.
+ * Returns null when the snapshot is invalid or any attributed lease row is
+ * invalid, so the list never hides a room behind a partial result. A room with
+ * only invalid bill rows still keeps its lease reminder.
+ */
+export function buildLeaseRenewals(
+  snapshot: AppFeedSnapshot,
+  today: string,
+): LeaseRenewal[] | null {
+  const validation = validateSnapshot(snapshot);
+  if (!validation.ok) return null;
+
+  const hasInvalidLease = [...validation.invalidRooms.values()].some(
+    (counts) => counts.leases > 0,
+  );
+  if (hasInvalidLease) {
+    console.warn("[appfeed] lease renewals unavailable", {
+      reason: "invalid-leases",
+    });
+    return null;
+  }
+
+  return validation.leases
+    .filter((lease) => isRenewalReminderDue(lease.end, today))
+    .sort(
+      (a, b) =>
+        a.end.localeCompare(b.end) || a.room.localeCompare(b.room),
+    )
+    .map(({ room, end }) => ({ room, end }));
+}
+
 function markRepairRoomInvalid(
   invalidRooms: Map<RoomLetter, number>,
   room: RoomLetter,
@@ -723,8 +793,24 @@ export function buildRoomRepairs(
     return { kind: "unavailable" };
   }
 
-  const repairs = validation.repairs
-    .filter((repair) => repair.room === room)
+  const roomRepairs = validation.repairs.filter((repair) => repair.room === room);
+
+  const lastDoneRow = roomRepairs
+    .filter(
+      (repair): repair is RepairRow & { status: "done"; doneOn: string } =>
+        repair.status === "done" && repair.doneOn !== null,
+    )
+    .sort(
+      (a, b) =>
+        b.doneOn.localeCompare(a.doneOn) ||
+        b.submittedOn.localeCompare(a.submittedOn) ||
+        a.requestId.localeCompare(b.requestId),
+    )[0];
+  const lastDone = lastDoneRow
+    ? { date: lastDoneRow.doneOn, note: lastDoneRow.doneNote }
+    : null;
+
+  const repairs = roomRepairs
     .sort((a, b) => {
       if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
       if (a.status === "pending") {
@@ -749,7 +835,7 @@ export function buildRoomRepairs(
       doneOn,
     }));
 
-  return { kind: "ok", repairs };
+  return { kind: "ok", repairs, lastDone };
 }
 
 /**
@@ -876,6 +962,22 @@ export function buildRoomFeed(
     .slice(0, 12)
     .map(toFeedPayment);
 
+  const lastConfirmationRow = roomBills
+    .filter(
+      (
+        bill,
+      ): bill is BillRow & { paidOn: string; confirmedOn: string } =>
+        bill.paidOn !== null && bill.confirmedOn !== null,
+    )
+    .sort(
+      (a, b) =>
+        b.confirmedOn.localeCompare(a.confirmedOn) ||
+        b.period.localeCompare(a.period),
+    )[0];
+  const lastConfirmation = lastConfirmationRow
+    ? { date: lastConfirmationRow.confirmedOn, note: lastConfirmationRow.confirmNote }
+    : null;
+
   const leaseRow = validation.leases.find((lease) => lease.room === room);
   const lease: FeedLease | null = leaseRow
     ? {
@@ -887,6 +989,13 @@ export function buildRoomFeed(
 
   return {
     kind: "ok",
-    feed: { room, openBills, payments, lease, fetchedAt },
+    feed: {
+      room,
+      openBills,
+      payments,
+      lease,
+      lastConfirmation,
+      fetchedAt,
+    },
   };
 }

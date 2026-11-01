@@ -209,8 +209,9 @@ describe("wrong-file and header guards", () => {
 
     const valuesUrl = new URL(fetchMock.mock.calls[2][0] as string);
     expect(valuesUrl.pathname).toContain(`/spreadsheets/${SHEET_ID}/values:batchGet`);
+    expect(valuesUrl.searchParams.getAll("ranges")).toHaveLength(2);
     expect(valuesUrl.searchParams.getAll("ranges")).toEqual([
-      "Bills!A:O",
+      "Bills!A:Q",
       "Leases!A:D",
     ]);
     expect(valuesUrl.searchParams.get("majorDimension")).toBe("ROWS");
@@ -542,6 +543,156 @@ describe("claim cell write", () => {
     expect(result).toEqual({
       kind: "unavailable",
       reason: "config",
+      transient: false,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("claim confirmation write", () => {
+  it("writes the confirmation date and blank note to P:Q", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ access_token: "token-123", expires_in: 3600 }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ updatedRange: "Bills!P5:Q5" }));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { writeClaimConfirmation } = await loadClient();
+    const result = await writeClaimConfirmation(5, "2026-11-01");
+
+    expect(result).toEqual({ kind: "ok" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const [url, init] = fetchMock.mock.calls[1];
+    expect(url).toBe(
+      `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Bills!P5:Q5?valueInputOption=RAW`,
+    );
+    expect(init).toMatchObject({
+      method: "PUT",
+      redirect: "error",
+      cache: "no-store",
+    });
+    expect(init.headers).toMatchObject({
+      authorization: "Bearer token-123",
+      "content-type": "application/json",
+    });
+    expect(JSON.parse(init.body as string)).toEqual({
+      values: [["2026-11-01", ""]],
+    });
+    expect(
+      fetchMock.mock.calls.some(([callUrl]) =>
+        String(callUrl).includes(":batchUpdate"),
+      ),
+    ).toBe(false);
+  });
+
+  it("writes a trimmed confirmation note", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ access_token: "token-123", expires_in: 3600 }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ updatedRange: "Bills!P5:Q5" }));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { writeClaimConfirmation } = await loadClient();
+    const result = await writeClaimConfirmation(
+      5,
+      "2026-11-01",
+      "  Transfer received  ",
+    );
+
+    expect(result).toEqual({ kind: "ok" });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toEqual({
+      values: [["2026-11-01", "Transfer received"]],
+    });
+  });
+
+  it.each([
+    ["row 1", 1, "2026-11-01", ""],
+    ["a non-integer row", 2.5, "2026-11-01", ""],
+    ["an impossible date", 2, "2026-02-30", ""],
+    ["an invalid note", 2, "2026-11-01", "Contact jane@example.com"],
+  ])(
+    "rejects %s before touching the network",
+    async (_label, row, date, note) => {
+      const { writeClaimConfirmation } = await loadClient();
+      const result = await writeClaimConfirmation(row, date, note);
+
+      expect(result).toEqual({
+        kind: "unavailable",
+        reason: "server",
+        transient: false,
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("returns config without touching the network when credentials are missing", async () => {
+    vi.stubEnv("APPFEED_SPREADSHEET_ID", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { writeClaimConfirmation } = await loadClient();
+    const result = await writeClaimConfirmation(2, "2026-11-01");
+
+    expect(result).toEqual({
+      kind: "unavailable",
+      reason: "config",
+      transient: false,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("paid date write", () => {
+  it("writes only the paid date to G", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ access_token: "token-123", expires_in: 3600 }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ updatedRange: "Bills!G5" }));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { writeBillPaidOn } = await loadClient();
+    const result = await writeBillPaidOn(5, "2026-11-01");
+
+    expect(result).toEqual({ kind: "ok" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const [url, init] = fetchMock.mock.calls[1];
+    expect(url).toBe(
+      `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Bills!G5?valueInputOption=RAW`,
+    );
+    expect(init).toMatchObject({
+      method: "PUT",
+      redirect: "error",
+      cache: "no-store",
+    });
+    expect(init.headers).toMatchObject({
+      authorization: "Bearer token-123",
+      "content-type": "application/json",
+    });
+    expect(JSON.parse(init.body as string)).toEqual({
+      values: [["2026-11-01"]],
+    });
+    expect(
+      fetchMock.mock.calls.some(([callUrl]) =>
+        String(callUrl).includes(":batchUpdate"),
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    ["row 1", 1, "2026-11-01"],
+    ["a non-integer row", 2.5, "2026-11-01"],
+    ["an impossible date", 2, "2026-02-30"],
+  ])("rejects %s before touching the network", async (_label, row, date) => {
+    const { writeBillPaidOn } = await loadClient();
+    const result = await writeBillPaidOn(row, date);
+
+    expect(result).toEqual({
+      kind: "unavailable",
+      reason: "server",
       transient: false,
     });
     expect(fetchMock).not.toHaveBeenCalled();

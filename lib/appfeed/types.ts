@@ -77,11 +77,18 @@ export type FeedLease = {
   renewalDue: string | null;
 };
 
+/** One tenant-visible event with its event date and optional note. */
+export type FeedEvent = {
+  date: string;
+  note: string | null;
+};
+
 export type RoomFeed = {
   room: RoomLetter;
   openBills: FeedBill[];
   payments: FeedPayment[];
   lease: FeedLease | null;
+  lastConfirmation: FeedEvent | null;
   fetchedAt: string;
 };
 
@@ -90,11 +97,21 @@ export type FeedResult =
   | { kind: "unavailable" };
 
 export type RoomRepairsResult =
-  | { kind: "ok"; repairs: RoomRepair[] }
+  | { kind: "ok"; repairs: RoomRepair[]; lastDone: FeedEvent | null }
   | { kind: "unavailable" };
 
 export type AdminRepairsResult =
   | { kind: "ok"; repairs: PendingRepair[] }
+  | { kind: "denied" }
+  | { kind: "unavailable" };
+
+export type LeaseRenewal = {
+  room: RoomLetter;
+  end: string;
+};
+
+export type AdminLeaseRenewalsResult =
+  | { kind: "ok"; renewals: LeaseRenewal[] }
   | { kind: "denied" }
   | { kind: "unavailable" };
 

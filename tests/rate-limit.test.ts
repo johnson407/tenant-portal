@@ -86,6 +86,50 @@ describe("rate limit lib", () => {
       windowSeconds: 15 * 60,
     });
   });
+
+  it("defines the claim confirmation bucket", async () => {
+    const { CLAIM_CONFIRM_RATE_BUCKET } = await import("@/lib/rate-limit");
+
+    expect(CLAIM_CONFIRM_RATE_BUCKET).toEqual({
+      prefix: "ratelimit:claim-confirm",
+      maxAttempts: 60,
+      windowSeconds: 15 * 60,
+    });
+  });
+});
+
+describe("claim confirmation limit", () => {
+  it("allows 60 confirmations and blocks the 61st", async () => {
+    const { consumeAttempt, CLAIM_CONFIRM_RATE_BUCKET } = await import(
+      "@/lib/rate-limit"
+    );
+
+    for (let index = 0; index < 60; index += 1) {
+      expect(
+        await consumeAttempt(CLAIM_CONFIRM_RATE_BUCKET, ["ip:1.2.3.4"], t),
+      ).toMatchObject({ allowed: true });
+    }
+
+    const blocked = await consumeAttempt(
+      CLAIM_CONFIRM_RATE_BUCKET,
+      ["ip:1.2.3.4"],
+      t,
+    );
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.retryAfterSeconds).toBe(60);
+  });
+
+  it("fails closed when the KV store is not configured", async () => {
+    delete process.env.KV_REST_API_URL;
+    delete process.env.KV_REST_API_TOKEN;
+    const { consumeAttempt, CLAIM_CONFIRM_RATE_BUCKET } = await import(
+      "@/lib/rate-limit"
+    );
+
+    await expect(
+      consumeAttempt(CLAIM_CONFIRM_RATE_BUCKET, ["ip:1.2.3.4"], t),
+    ).rejects.toThrow("KV store is not configured");
+  });
 });
 
 describe("repair submission limit", () => {

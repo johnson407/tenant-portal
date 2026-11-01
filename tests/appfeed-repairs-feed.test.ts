@@ -41,9 +41,10 @@ vi.mock("@/lib/appfeed/google", () => ({
   writeRepairDone: mocks.writeRepairDone,
 }));
 
-vi.mock("@/lib/appfeed/dates", () => ({
-  todayInTaipei: mocks.todayInTaipei,
-}));
+vi.mock("@/lib/appfeed/dates", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/appfeed/dates")>();
+  return { ...actual, todayInTaipei: mocks.todayInTaipei };
+});
 
 vi.mock("@/lib/appfeed/repair-lock", () => ({
   acquireRepairDoneLock: mocks.acquireRepairDoneLock,
@@ -80,6 +81,7 @@ function validRepair(
     "Leaking tap in the bathroom",
     "2026-10-30",
     "pending",
+    "",
     "",
   ];
   for (const [index, value] of Object.entries(overrides)) {
@@ -135,6 +137,84 @@ describe("getRoomRepairs", () => {
       expire: 3600,
     });
     expect(mocks.cacheTag).toHaveBeenCalledWith("appfeed:repairs:room:a");
+  });
+
+  it("keeps the latest done request outside the history cap", async () => {
+    const rows = Array.from({ length: 20 }, (_, index) =>
+      validRepair({
+        1: index.toString(16).padStart(16, "0"),
+        3: `Pending ${index}`,
+        4: "2026-10-30",
+      }),
+    );
+    rows.push(
+      validRepair({
+        1: "a".repeat(16),
+        3: "Old done request",
+        4: "2026-09-01",
+        5: "done",
+        6: "2026-09-02",
+        7: "Old completion note",
+      }),
+    );
+
+    mocks.fetchRepairsSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: makeSnapshot(rows),
+    });
+
+    const result = await getRoomRepairs("a");
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.repairs).toHaveLength(20);
+    expect(result.repairs.every((repair) => repair.status === "pending")).toBe(
+      true,
+    );
+    expect(result.lastDone).toEqual({
+      date: "2026-09-02",
+      note: "Old completion note",
+    });
+  });
+
+  it("selects the latest done request by done date", async () => {
+    mocks.fetchRepairsSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: makeSnapshot([
+        validRepair({
+          1: "a".repeat(16),
+          3: "Older request",
+          4: "2026-08-01",
+          5: "done",
+          6: "2026-08-02",
+          7: "Older note",
+        }),
+        validRepair({
+          1: "b".repeat(16),
+          3: "Newest request",
+          4: "2026-09-01",
+          5: "done",
+          6: "2026-09-10",
+          7: "Newest note",
+        }),
+        validRepair({
+          1: "c".repeat(16),
+          3: "Middle request",
+          4: "2026-08-15",
+          5: "done",
+          6: "2026-08-20",
+        }),
+      ]),
+    });
+
+    const result = await getRoomRepairs("a");
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.lastDone).toEqual({
+      date: "2026-09-10",
+      note: "Newest note",
+    });
   });
 
   it("returns unavailable, not empty, when the tab is missing", async () => {
@@ -455,7 +535,7 @@ describe("completeRepair", () => {
     const result = await completeRepair(REQUEST_ID);
 
     expect(result).toEqual({ kind: "ok" });
-    expect(mocks.writeRepairDone).toHaveBeenCalledWith(2, "2026-11-01");
+    expect(mocks.writeRepairDone).toHaveBeenCalledWith(2, "2026-11-01", "");
     expect(mocks.revalidateTag).toHaveBeenCalledTimes(1);
     expect(mocks.revalidateTag).toHaveBeenCalledWith(
       "appfeed:repairs:room:a",

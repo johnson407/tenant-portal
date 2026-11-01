@@ -8,8 +8,10 @@ const mocks = vi.hoisted(() => ({
   getBankAccount: vi.fn(),
   listPendingClaims: vi.fn(),
   listPendingRepairs: vi.fn(),
+  listLeaseRenewals: vi.fn(),
   resetForm: vi.fn(),
   bankForm: vi.fn(),
+  claimConfirmForm: vi.fn(),
   repairDoneForm: vi.fn(),
 }));
 
@@ -38,6 +40,10 @@ vi.mock("@/lib/appfeed/repairs", () => ({
   listPendingRepairs: mocks.listPendingRepairs,
 }));
 
+vi.mock("@/lib/appfeed/renewal", () => ({
+  listLeaseRenewals: mocks.listLeaseRenewals,
+}));
+
 vi.mock("@/app/[lang]/admin/reset-form", () => ({
   default: mocks.resetForm,
 }));
@@ -48,6 +54,10 @@ vi.mock("@/app/[lang]/admin/bank-form", () => ({
 
 vi.mock("@/app/[lang]/admin/repair-done-form", () => ({
   default: mocks.repairDoneForm,
+}));
+
+vi.mock("@/app/[lang]/admin/claim-confirm-form", () => ({
+  default: mocks.claimConfirmForm,
 }));
 
 import AdminPage, { generateMetadata } from "@/app/[lang]/admin/page";
@@ -69,8 +79,10 @@ beforeEach(() => {
   mocks.getBankAccount.mockResolvedValue(null);
   mocks.listPendingClaims.mockResolvedValue({ kind: "ok", claims: [] });
   mocks.listPendingRepairs.mockResolvedValue({ kind: "ok", repairs: [] });
+  mocks.listLeaseRenewals.mockResolvedValue({ kind: "ok", renewals: [] });
   mocks.resetForm.mockReturnValue(null);
   mocks.bankForm.mockReturnValue(null);
+  mocks.claimConfirmForm.mockReturnValue(null);
   mocks.repairDoneForm.mockReturnValue(null);
 });
 
@@ -126,6 +138,7 @@ describe("localized admin page", () => {
     expect(mocks.getBankAccount).not.toHaveBeenCalled();
     expect(mocks.listPendingClaims).not.toHaveBeenCalled();
     expect(mocks.listPendingRepairs).not.toHaveBeenCalled();
+    expect(mocks.listLeaseRenewals).not.toHaveBeenCalled();
   });
 
   it("passes saved values to the bank form for prefill", async () => {
@@ -192,6 +205,16 @@ describe("admin payment claims", () => {
     expect(html).toContain("2026-11");
     expect(html).toContain("2026年10月30日");
     expect(html).toContain("01234");
+    expect(mocks.claimConfirmForm).toHaveBeenCalledWith(
+      {
+        locale: "zh-TW",
+        room: "a",
+        period: "2026-11",
+        claimedOn: "2026-10-30",
+        labels: expect.any(Object),
+      },
+      undefined,
+    );
     expect(mocks.listPendingClaims).toHaveBeenCalledTimes(1);
   });
 
@@ -396,5 +419,173 @@ describe("admin repair requests", () => {
     expect(html).toContain("lg:col-span-2");
     expect(mocks.listPendingClaims).toHaveBeenCalledTimes(1);
     expect(mocks.listPendingRepairs).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("admin lease renewal reminders", () => {
+  async function renderAdmin(lang = "zh-TW"): Promise<string> {
+    return renderToStaticMarkup(
+      await AdminPage({ params: Promise.resolve({ lang }) }),
+    );
+  }
+
+  it("lists one room inside the window", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listLeaseRenewals.mockResolvedValue({
+      kind: "ok",
+      renewals: [{ room: "c", end: "2027-01-15" }],
+    });
+
+    const html = await renderAdmin();
+
+    expect(html).toContain("待續約租約");
+    expect(html).toContain("未來 60 天內到期的租約。");
+    expect(html).toContain("房間 C");
+    expect(html).toContain("租約結束");
+    expect(html).toContain("2027年1月15日");
+  });
+
+  it("lists several rooms in the order given by the accessor", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listLeaseRenewals.mockResolvedValue({
+      kind: "ok",
+      renewals: [
+        { room: "b", end: "2027-01-05" },
+        { room: "a", end: "2027-01-10" },
+        { room: "d", end: "2027-02-01" },
+      ],
+    });
+
+    const html = await renderAdmin();
+
+    const b = html.indexOf("房間 B");
+    const a = html.indexOf("房間 A");
+    const d = html.indexOf("房間 D");
+    expect(b).toBeGreaterThan(-1);
+    expect(b).toBeLessThan(a);
+    expect(a).toBeLessThan(d);
+  });
+
+  it("lists rooms with the same end date by room letter", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listLeaseRenewals.mockResolvedValue({
+      kind: "ok",
+      renewals: [
+        { room: "a", end: "2027-01-20" },
+        { room: "c", end: "2027-01-20" },
+      ],
+    });
+
+    const html = await renderAdmin();
+
+    expect(html.indexOf("房間 A")).toBeLessThan(html.indexOf("房間 C"));
+  });
+
+  it("renders no banner when no room is inside the window", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+
+    const html = await renderAdmin();
+
+    expect(html).not.toContain("待續約租約");
+    expect(html).not.toContain("Lease renewals due");
+  });
+
+  it("places the banner after the header and before the admin cards", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listLeaseRenewals.mockResolvedValue({
+      kind: "ok",
+      renewals: [{ room: "a", end: "2027-01-10" }],
+    });
+
+    const html = await renderAdmin();
+
+    const banner = html.indexOf("待續約租約");
+    expect(banner).toBeGreaterThan(html.indexOf("</header>"));
+    expect(banner).toBeLessThan(html.indexOf('class="mt-8 grid gap-6'));
+    expect(banner).toBeLessThan(html.indexOf("待確認的付款回報"));
+    expect(banner).toBeLessThan(html.indexOf("待處理的報修申請"));
+  });
+
+  it("localizes the banner in English", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listLeaseRenewals.mockResolvedValue({
+      kind: "ok",
+      renewals: [{ room: "c", end: "2027-01-15" }],
+    });
+
+    const html = await renderAdmin("en");
+
+    expect(html).toContain("Lease renewals due");
+    expect(html).toContain("Leases ending within the next 60 days.");
+    expect(html).toContain("Room C");
+    expect(html).toContain("Lease end");
+    expect(html).toContain("Jan 15, 2027");
+  });
+
+  it("shows the unavailable notice and keeps every other card usable", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listLeaseRenewals.mockResolvedValue({ kind: "unavailable" });
+    mocks.listPendingClaims.mockResolvedValue({
+      kind: "ok",
+      claims: [
+        {
+          room: "a",
+          period: "2026-11",
+          claimedOn: "2026-10-30",
+          bankLast5: "01234",
+        },
+      ],
+    });
+    mocks.listPendingRepairs.mockResolvedValue({
+      kind: "ok",
+      repairs: [
+        {
+          requestId: "0123456789abcdef",
+          room: "a",
+          category: "plumbing",
+          note: "Leaking tap",
+          submittedOn: "2026-10-30",
+          status: "pending",
+          doneOn: null,
+        },
+      ],
+    });
+
+    const html = await renderAdmin("en");
+
+    expect(html).toContain(
+      "Lease renewal reminders are temporarily unavailable. Try again later.",
+    );
+    expect(html).not.toContain("Lease renewals due");
+    expect(html).toContain("Pending payment claims");
+    expect(html).toContain("01234");
+    expect(html).toContain("Pending repair requests");
+    expect(html).toContain("Leaking tap");
+    expect(mocks.resetForm).toHaveBeenCalled();
+    expect(mocks.bankForm).toHaveBeenCalled();
+  });
+
+  it("shows the unavailable notice when the renewal read throws", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listLeaseRenewals.mockRejectedValue(new Error("boom"));
+
+    const html = await renderAdmin("en");
+
+    expect(html).toContain(
+      "Lease renewal reminders are temporarily unavailable. Try again later.",
+    );
+    expect(html).toContain("Pending payment claims");
+    expect(html).toContain("Pending repair requests");
+    expect(mocks.resetForm).toHaveBeenCalled();
+    expect(mocks.bankForm).toHaveBeenCalled();
+  });
+
+  it("redirects when the renewal accessor denies the session", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listLeaseRenewals.mockResolvedValue({ kind: "denied" });
+
+    await expect(renderAdmin("en")).rejects.toBe(REDIRECT);
+
+    expect(mocks.redirect).toHaveBeenCalledWith("/en/admin/login");
   });
 });

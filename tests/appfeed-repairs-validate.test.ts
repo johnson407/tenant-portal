@@ -7,6 +7,8 @@ import {
   REPAIRS_RANGE,
   buildPendingRepairs,
   buildRoomRepairs,
+  isValidNote,
+  isValidOptionalNote,
   isValidRepairNote,
   parseRepairRow,
   validateRepairs,
@@ -21,6 +23,7 @@ function validRepair(overrides: Partial<Record<number, unknown>> = {}): unknown[
     "Leaking tap in the bathroom",
     "2026-10-30",
     "pending",
+    "",
     "",
   ];
   for (const [index, value] of Object.entries(overrides)) {
@@ -47,8 +50,9 @@ describe("Repairs schema constants", () => {
       "submitted_on",
       "status",
       "done_on",
+      "done_note",
     ]);
-    expect(REPAIRS_RANGE).toBe("Repairs!A:G");
+    expect(REPAIRS_RANGE).toBe("Repairs!A:H");
     expect([...REPAIR_CATEGORIES]).toEqual([
       "plumbing",
       "electrical",
@@ -113,6 +117,15 @@ describe("repair note rules", () => {
   ])("rejects %s", (_label, value) => {
     expect(isValidRepairNote(value)).toBe(false);
   });
+
+  it("uses the same rules for shared and optional notes", () => {
+    expect(isValidNote("Washer replaced")).toBe(true);
+    expect(isValidNote("")).toBe(false);
+    expect(isValidOptionalNote("")).toBe(true);
+    expect(isValidOptionalNote("   ")).toBe(true);
+    expect(isValidOptionalNote("See https://example.com")).toBe(false);
+    expect(isValidRepairNote("Washer replaced")).toBe(isValidNote("Washer replaced"));
+  });
 });
 
 describe("parseRepairRow", () => {
@@ -125,6 +138,7 @@ describe("parseRepairRow", () => {
       submittedOn: "2026-10-30",
       status: "pending",
       doneOn: null,
+      doneNote: null,
     });
   });
 
@@ -136,6 +150,22 @@ describe("parseRepairRow", () => {
     ).toMatchObject({
       status: "done",
       doneOn: "2026-11-01",
+    });
+  });
+
+  it("parses a done request with a trimmed completion note", () => {
+    expect(
+      parseRepairRow(
+        validRepair({
+          5: "done",
+          6: "2026-11-01",
+          7: "  Washer replaced  ",
+        }),
+      ),
+    ).toMatchObject({
+      status: "done",
+      doneOn: "2026-11-01",
+      doneNote: "Washer replaced",
     });
   });
 
@@ -192,6 +222,8 @@ describe("parseRepairRow", () => {
     ["unknown status", { 5: "open" }],
     ["uppercase status", { 5: "PENDING" }],
     ["pending with a done date", { 6: "2026-10-31" }],
+    ["pending with a completion note", { 7: "Already fixed" }],
+    ["done with an invalid completion note", { 5: "done", 6: "2026-11-01", 7: "See https://example.com" }],
     ["done with a blank done date", { 5: "done" }],
     ["done with an impossible date", { 5: "done", 6: "2026-02-30" }],
     [
@@ -306,6 +338,7 @@ describe("buildRoomRepairs", () => {
     expect(buildRoomRepairs(makeRepairsSnapshot(), "a")).toEqual({
       kind: "ok",
       repairs: [],
+      lastDone: null,
     });
   });
 

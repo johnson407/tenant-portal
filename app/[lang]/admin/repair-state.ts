@@ -1,6 +1,7 @@
 export type RepairDoneError =
   | "already-done"
   | "not-found"
+  | "invalid-note"
   | "unavailable"
   | "rate"
   | "generic";

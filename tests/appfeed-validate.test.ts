@@ -43,6 +43,8 @@ function validBill(overrides: Partial<Record<number, unknown>> = {}): unknown[] 
     "",
     "",
     "",
+    "",
+    "",
   ];
   for (const [index, value] of Object.entries(overrides)) {
     row[Number(index)] = value;
@@ -84,6 +86,8 @@ describe("AppFeed constants", () => {
       "electricity_start",
       "electricity_end",
       "electricity_rate",
+      "confirmed_on",
+      "confirm_note",
     ]);
     expect([...LEASES_HEADER]).toEqual([
       "room",
@@ -347,6 +351,40 @@ describe("Bills validation", () => {
     expect(result.feed.openBills[0].claim?.bankLast5).toBe("00042");
   });
 
+  it("accepts a confirmation date with a claim and a blank paid date", () => {
+    const result = feedFor(
+      makeSnapshot([
+        validBill({
+          7: "2026-10-28",
+          8: "01234",
+          15: "2026-11-01",
+        }),
+      ]),
+    );
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.feed.openBills[0].claim?.claimedOn).toBe("2026-10-28");
+  });
+
+  it("accepts a confirmation date and note after payment", () => {
+    const result = feedFor(
+      makeSnapshot([
+        validBill({
+          6: "2026-10-30",
+          7: "2026-10-28",
+          8: "01234",
+          15: "2026-11-01",
+          16: "  Received  ",
+        }),
+      ]),
+    );
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.feed.payments).toHaveLength(1);
+  });
+
   it("projects payments newest first and keeps the latest 12", () => {
     const rows = Array.from({ length: 13 }, (_, index) => {
       const year = 2025 + Math.floor(index / 12);
@@ -415,6 +453,12 @@ describe("Bills validation", () => {
     ["paid_on", { 6: "2026-04-31" }],
     ["claimed_on", { 7: "2026-04-31", 8: "01234" }],
     ["bank_last5", { 7: "2026-10-28", 8: "0123x" }],
+    ["confirmed_on", { 7: "2026-10-28", 8: "01234", 15: "2026-02-30" }],
+    ["confirm_note without a confirmation date", { 7: "2026-10-28", 8: "01234", 16: "Received" }],
+    ["confirmation without a claim", { 15: "2026-11-01" }],
+    ["confirmation before the claim", { 7: "2026-10-28", 8: "01234", 15: "2026-10-27" }],
+    ["confirmation before payment", { 6: "2026-10-30", 7: "2026-10-28", 8: "01234", 15: "2026-10-29" }],
+    ["confirm_note with an email", { 7: "2026-10-28", 8: "01234", 15: "2026-11-01", 16: "jane@example.com" }],
   ])("fails the whole room closed for a bad %s", (_column, overrides) => {
     const result = feedFor(makeSnapshot([validBill(overrides)]));
     expect(result).toEqual({ kind: "unavailable" });

@@ -13,6 +13,13 @@ export type Dictionary = {
     switchLocale: string;
     switchLocaleLabel: string;
   };
+  renewal: {
+    tenantHeading: string;
+    tenantMessageTemplate: string;
+    adminHeading: string;
+    adminCaption: string;
+    unavailable: string;
+  };
   login: {
     heading: string;
     subtitle: string;
@@ -45,6 +52,12 @@ export type Dictionary = {
     billBreakdownTemplate: string;
     total: string;
     lastUpdatedTemplate: string;
+    latestUpdate: {
+      label: string;
+      repairDone: string;
+      claimConfirmed: string;
+      noteLabel: string;
+    };
     unavailableHeading: string;
     unavailableMessage: string;
     emptyBills: string;
@@ -178,6 +191,20 @@ export type Dictionary = {
       period: string;
       claimedOn: string;
       bankLast5: string;
+      paidOnLabel: string;
+      noteLabel: string;
+      notePlaceholder: string;
+      confirm: string;
+      confirming: string;
+      errors: {
+        date: string;
+        note: string;
+        notFound: string;
+        paid: string;
+        unavailable: string;
+        rate: string;
+        generic: string;
+      };
     };
     repairs: {
       sectionHeading: string;
@@ -192,9 +219,12 @@ export type Dictionary = {
       done: string;
       markDone: string;
       marking: string;
+      noteLabel: string;
+      notePlaceholder: string;
       errors: {
         alreadyDone: string;
         notFound: string;
+        invalidNote: string;
         unavailable: string;
         rate: string;
         generic: string;

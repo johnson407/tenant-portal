@@ -148,6 +148,7 @@ const ROOM_TEXT_PAIRS: TextPair[] = [
   { label: "room lease label slate-300 on slate-900", fg: "slate-300", bg: "slate-900", expected: 12.02 },
   { label: "room secondary body slate-300 on slate-950", fg: "slate-300", bg: "slate-950", expected: 13.59 },
   { label: "room muted body slate-400 on slate-900", fg: "slate-400", bg: "slate-900", expected: 6.96 },
+  // Conservative lower bound: the real banner is amber-950/40 over slate-950.
   { label: "room status badge amber-200 on amber-950", fg: "amber-200", bg: "amber-950", expected: 12.03 },
 ];
 
@@ -165,6 +166,18 @@ describe("room dashboard", () => {
     sourceHas(file, "color-scheme: dark");
     sourceLacks(file, "prefers-color-scheme");
     sourceHas("app/[lang]/layout.tsx", "bg-slate-950 text-slate-100");
+  });
+
+  it("uses the amber renewal panel and wrapping classes", () => {
+    const banner = "app/[lang]/renewal-banner.tsx";
+
+    sourceHas(
+      banner,
+      "border border-amber-800 bg-amber-950/40 p-4 text-amber-200",
+    );
+    sourceHas(banner, "flex flex-wrap");
+    sourceHas(banner, "min-w-0 break-words");
+    sourceLacks(banner, "whitespace-nowrap");
   });
 
   it("uses the dark shell, stat strip, bill cards, and status badge", () => {

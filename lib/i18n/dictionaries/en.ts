@@ -15,6 +15,15 @@ const en: Dictionary = {
     switchLocale: "繁體中文",
     switchLocaleLabel: "View this page in Traditional Chinese",
   },
+  renewal: {
+    tenantHeading: "Lease renewal",
+    tenantMessageTemplate:
+      "Your lease ends on {date}. Contact the landlord to discuss renewal.",
+    adminHeading: "Lease renewals due",
+    adminCaption: "Leases ending within the next 60 days.",
+    unavailable:
+      "Lease renewal reminders are temporarily unavailable. Try again later.",
+  },
   login: {
     heading: "Tenant sign in",
     subtitle: "Select your room and enter your access code.",
@@ -47,6 +56,12 @@ const en: Dictionary = {
     billBreakdownTemplate: "{start} - {end}: {units} x {rate}",
     total: "Total",
     lastUpdatedTemplate: "Last updated {date}",
+    latestUpdate: {
+      label: "Latest update",
+      repairDone: "Repair completed",
+      claimConfirmed: "Payment confirmed",
+      noteLabel: "Note",
+    },
     unavailableHeading: "Data temporarily unavailable",
     unavailableMessage: "Please contact the landlord.",
     emptyBills: "No bills yet.",
@@ -184,6 +199,20 @@ const en: Dictionary = {
       period: "Period",
       claimedOn: "Reported on",
       bankLast5: "Last 5 digits",
+      paidOnLabel: "Paid date",
+      noteLabel: "Confirmation note (optional)",
+      notePlaceholder: "For example: Transfer received.",
+      confirm: "Confirm claim",
+      confirming: "Confirming...",
+      errors: {
+        date: "Enter a real paid date that is not in the future.",
+        note: "Use a short note with no email, URL, or long number.",
+        notFound: "This claim is no longer pending. Refresh the page.",
+        paid: "This bill is already paid.",
+        unavailable: "The claim could not be confirmed. Try again later.",
+        rate: "Too many attempts. Wait and try again.",
+        generic: "Could not confirm the claim. Try again.",
+      },
     },
     repairs: {
       sectionHeading: "Pending repair requests",
@@ -198,9 +227,13 @@ const en: Dictionary = {
       done: "Done",
       markDone: "Mark done",
       marking: "Saving...",
+      noteLabel: "Completion note (optional)",
+      notePlaceholder: "For example: Replaced the washer.",
       errors: {
         alreadyDone: "This request is already done.",
         notFound: "This request was not found.",
+        invalidNote:
+          "Use a short note with no email, URL, or long number.",
         unavailable: "Could not update the request. Try again.",
         rate: "Too many attempts. Try again later.",
         generic: "Could not update the request. Try again.",

@@ -6,8 +6,10 @@ import type { AppFeedSnapshot } from "@/lib/appfeed/types";
 import {
   BILLS_HEADER,
   LEASES_HEADER,
+  REPAIRS_HEADER,
   buildPendingClaims,
   buildRoomFeed,
+  buildRoomRepairs,
 } from "@/lib/appfeed/validate";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -50,7 +52,8 @@ describe("AppFeed server-only boundary", () => {
       return (
         source.includes("@/lib/appfeed/feed") ||
         source.includes("@/lib/appfeed/google") ||
-        source.includes("@/lib/appfeed/validate")
+        source.includes("@/lib/appfeed/validate") ||
+        source.includes("@/lib/appfeed/renewal")
       );
     });
 
@@ -77,13 +80,18 @@ describe("AppFeed server-only boundary", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("marks the Google client and cached accessor as server-only", () => {
+  it("marks the Google client, cached accessor, and reminder accessor as server-only", () => {
     expect(read(join(repoRoot, "lib/appfeed/google.ts"))).toContain(
       'import "server-only"',
     );
     expect(read(join(repoRoot, "lib/appfeed/feed.ts"))).toContain(
       'import "server-only"',
     );
+
+    const renewal = read(join(repoRoot, "lib/appfeed/renewal.ts"));
+    expect(renewal).toContain('import "server-only"');
+    expect(renewal).toContain("fetchAppFeedSnapshot");
+    expect(renewal).not.toMatch(/\bwrite[A-Z]/);
   });
 
   it("does not expose feed data through a route handler or Server Action", () => {
@@ -246,6 +254,115 @@ describe("payment claim boundaries", () => {
     expect(JSON.stringify(a)).not.toContain("2012");
     expect(JSON.stringify(b)).not.toContain("1001");
     expect(JSON.stringify(b)).not.toContain("1011");
+  });
+
+  it("keeps room A confirmation and completion notes out of room B", () => {
+    const confirmNote = "ROOM_A_CONFIRM_NOTE";
+    const doneNote = "ROOM_A_DONE_NOTE";
+    const snapshot: AppFeedSnapshot = {
+      bills: [
+        [...BILLS_HEADER],
+        [
+          "a",
+          "2026-10",
+          10000,
+          "",
+          "",
+          "2026-11-05",
+          "2026-10-20",
+          "2026-10-18",
+          "12345",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "2026-10-28",
+          confirmNote,
+        ],
+        [
+          "b",
+          "2026-10",
+          20000,
+          "",
+          "",
+          "2026-11-05",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+        ],
+      ],
+      leases: [
+        [...LEASES_HEADER],
+        ["a", "2026-01-01", "2026-12-31", ""],
+        ["b", "2026-01-01", "2026-12-31", ""],
+      ],
+    };
+    const repairs = {
+      repairs: [
+        [...REPAIRS_HEADER],
+        [
+          "a",
+          "0123456789abcdef",
+          "plumbing",
+          "Leaking tap",
+          "2026-10-20",
+          "done",
+          "2026-10-30",
+          doneNote,
+        ],
+        [
+          "b",
+          "fedcba9876543210",
+          "electrical",
+          "Dim light",
+          "2026-10-21",
+          "pending",
+          "",
+          "",
+        ],
+      ],
+    };
+
+    const a = buildRoomFeed(snapshot, "a", "2026-11-01T00:00:00.000Z");
+    const b = buildRoomFeed(snapshot, "b", "2026-11-01T00:00:00.000Z");
+    const aRepairs = buildRoomRepairs(repairs, "a");
+    const bRepairs = buildRoomRepairs(repairs, "b");
+
+    expect(a.kind).toBe("ok");
+    expect(b.kind).toBe("ok");
+    expect(aRepairs.kind).toBe("ok");
+    expect(bRepairs.kind).toBe("ok");
+    if (
+      a.kind !== "ok" ||
+      b.kind !== "ok" ||
+      aRepairs.kind !== "ok" ||
+      bRepairs.kind !== "ok"
+    ) {
+      return;
+    }
+
+    expect(a.feed.lastConfirmation).toEqual({
+      date: "2026-10-28",
+      note: confirmNote,
+    });
+    expect(b.feed.lastConfirmation).toBeNull();
+    expect(aRepairs.lastDone).toEqual({
+      date: "2026-10-30",
+      note: doneNote,
+    });
+    expect(bRepairs.lastDone).toBeNull();
+    expect(JSON.stringify(b)).not.toContain(confirmNote);
+    expect(JSON.stringify(bRepairs)).not.toContain(doneNote);
   });
 
   it("projects a pending claim to the admin list only", () => {

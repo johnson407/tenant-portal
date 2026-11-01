@@ -38,6 +38,16 @@ describe("dictionaries", () => {
     expect(englishStrings.some((value) => /[\u3400-\u9fff]/.test(value))).toBe(false);
   });
 
+  it("gives the tenant renewal message only the date placeholder", () => {
+    for (const template of [
+      en.renewal.tenantMessageTemplate,
+      zhTW.renewal.tenantMessageTemplate,
+    ]) {
+      expect(template).toContain("{date}");
+      expect(template.match(/\{[^}]*\}/g)).toEqual(["{date}"]);
+    }
+  });
+
   it("gives the bill breakdown template all four placeholders", () => {
     for (const template of [
       en.room.billBreakdownTemplate,

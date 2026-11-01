@@ -1,15 +1,21 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import PortalShell from "@/app/[lang]/portal-shell";
+import { RenewalBanner } from "@/app/[lang]/renewal-banner";
 import SectionCard from "@/app/[lang]/section-card";
 import { type BankAccount, getBankAccount } from "@/lib/bank-account";
 import { listPendingClaims, type PendingClaimsResult } from "@/lib/appfeed/claims";
 import { listPendingRepairs } from "@/lib/appfeed/repairs";
-import type { AdminRepairsResult } from "@/lib/appfeed/types";
+import { listLeaseRenewals } from "@/lib/appfeed/renewal";
+import type {
+  AdminLeaseRenewalsResult,
+  AdminRepairsResult,
+} from "@/lib/appfeed/types";
 import { getDictionary, isLocale, localePath } from "@/lib/i18n";
 import { formatDate } from "@/lib/i18n/format";
 import { isAdminSession } from "@/lib/session-cookies";
 import AdminBankForm from "./bank-form";
+import ClaimConfirmForm from "./claim-confirm-form";
 import AdminResetForm from "./reset-form";
 import RepairDoneForm from "./repair-done-form";
 
@@ -55,6 +61,16 @@ export default async function AdminPage({ params }: AdminPageProps) {
     redirect(localePath(lang, "/admin/login"));
   }
 
+  let renewalsResult: AdminLeaseRenewalsResult = { kind: "unavailable" };
+  try {
+    renewalsResult = await listLeaseRenewals();
+  } catch {
+    renewalsResult = { kind: "unavailable" };
+  }
+  if (renewalsResult.kind === "denied") {
+    redirect(localePath(lang, "/admin/login"));
+  }
+
   return (
     <PortalShell
       locale={lang}
@@ -69,6 +85,18 @@ export default async function AdminPage({ params }: AdminPageProps) {
         </h1>
         <p className="text-sm text-slate-400">{dictionary.admin.subtitle}</p>
       </header>
+      {renewalsResult.kind === "unavailable" ? (
+        <p className="mt-6 rounded-xl border border-amber-800 bg-amber-950/40 p-4 text-sm text-amber-200">
+          {dictionary.renewal.unavailable}
+        </p>
+      ) : renewalsResult.renewals.length === 0 ? null : (
+        <RenewalBanner
+          locale={lang}
+          dictionary={dictionary}
+          renewals={renewalsResult.renewals}
+          variant="admin"
+        />
+      )}
       <div className="mt-8 grid gap-6 lg:grid-cols-2 lg:items-start">
         <AdminResetForm locale={lang} labels={dictionary.admin} />
         {bankUnavailable ? (
@@ -95,39 +123,53 @@ export default async function AdminPage({ params }: AdminPageProps) {
                 {dictionary.admin.claims.empty}
               </p>
             ) : (
-              <table className="w-full text-left text-sm">
-                <thead className="text-slate-400">
-                  <tr>
-                    <th scope="col" className="py-2 pr-4 font-medium">
-                      {dictionary.admin.claims.room}
-                    </th>
-                    <th scope="col" className="py-2 pr-4 font-medium">
-                      {dictionary.admin.claims.period}
-                    </th>
-                    <th scope="col" className="py-2 pr-4 font-medium">
-                      {dictionary.admin.claims.claimedOn}
-                    </th>
-                    <th scope="col" className="py-2 font-medium">
-                      {dictionary.admin.claims.bankLast5}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {claimsResult.claims.map((claim) => (
-                    <tr
-                      key={`${claim.room}:${claim.period}`}
-                      className="border-t border-slate-800 text-slate-200"
-                    >
-                      <td className="py-2 pr-4 uppercase">{claim.room}</td>
-                      <td className="py-2 pr-4">{claim.period}</td>
-                      <td className="py-2 pr-4">
-                        {formatDate(claim.claimedOn, lang)}
-                      </td>
-                      <td className="py-2 font-mono">{claim.bankLast5}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="text-slate-400">
+                    <tr>
+                      <th scope="col" className="py-2 pr-4 font-medium">
+                        {dictionary.admin.claims.room}
+                      </th>
+                      <th scope="col" className="py-2 pr-4 font-medium">
+                        {dictionary.admin.claims.period}
+                      </th>
+                      <th scope="col" className="py-2 pr-4 font-medium">
+                        {dictionary.admin.claims.claimedOn}
+                      </th>
+                      <th scope="col" className="py-2 font-medium">
+                        {dictionary.admin.claims.bankLast5}
+                      </th>
+                      <th scope="col" className="py-2 font-medium">
+                        {dictionary.admin.claims.confirm}
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {claimsResult.claims.map((claim) => (
+                      <tr
+                        key={`${claim.room}:${claim.period}`}
+                        className="border-t border-slate-800 text-slate-200"
+                      >
+                        <td className="py-2 pr-4 uppercase">{claim.room}</td>
+                        <td className="py-2 pr-4">{claim.period}</td>
+                        <td className="py-2 pr-4">
+                          {formatDate(claim.claimedOn, lang)}
+                        </td>
+                        <td className="py-2 font-mono">{claim.bankLast5}</td>
+                        <td className="py-2 pl-2">
+                          <ClaimConfirmForm
+                            locale={lang}
+                            room={claim.room}
+                            period={claim.period}
+                            claimedOn={claim.claimedOn}
+                            labels={dictionary.admin.claims}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </SectionCard>
         </div>

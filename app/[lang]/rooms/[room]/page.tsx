@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import PortalShell from "@/app/[lang]/portal-shell";
+import { RenewalBanner } from "@/app/[lang]/renewal-banner";
 import SectionCard from "@/app/[lang]/section-card";
 import { getRoomFeed } from "@/lib/appfeed/feed";
 import { getRoomRepairs } from "@/lib/appfeed/repairs";
+import { selectLatestUpdate } from "@/lib/appfeed/updates";
+import { isRenewalReminderDue, todayInTaipei } from "@/lib/appfeed/dates";
 import type { FeedResult, RoomRepairsResult } from "@/lib/appfeed/types";
 import { type BankAccount, getBankAccount } from "@/lib/bank-account";
 import { getDictionary, isLocale, localePath } from "@/lib/i18n";
@@ -102,6 +105,18 @@ export default async function RoomPage({ params }: RoomPageProps) {
   }
 
   const roomHeading = dictionary.room.headingTemplate.replace("{room}", ROOM_UPPER[room]);
+  const latestUpdate = selectLatestUpdate(result, repairsResult);
+  const renewalBanner =
+    feed !== null &&
+    feed.lease !== null &&
+    isRenewalReminderDue(feed.lease.end, todayInTaipei()) ? (
+      <RenewalBanner
+        locale={lang}
+        dictionary={dictionary}
+        renewals={[{ room: claims.room, end: feed.lease.end }]}
+        variant="tenant"
+      />
+    ) : null;
 
   const bankCard =
     bankAccount === null ? null : (
@@ -151,6 +166,35 @@ export default async function RoomPage({ params }: RoomPageProps) {
             </p>
           )}
         </div>
+        {renewalBanner}
+        {latestUpdate === null ? null : (
+          <div className="rounded-md border border-slate-700 bg-slate-950/50 p-3 text-slate-100">
+            <p className="text-xs font-medium tracking-wide text-slate-300">
+              {dictionary.room.latestUpdate.label}
+            </p>
+            <p className="mt-1 text-sm">
+              <span className="font-medium">
+                {latestUpdate.kind === "repair-done"
+                  ? dictionary.room.latestUpdate.repairDone
+                  : dictionary.room.latestUpdate.claimConfirmed}
+              </span>
+              <span aria-hidden="true" className="mx-2 text-slate-500">
+                ·
+              </span>
+              <span className="font-mono">
+                {formatDate(latestUpdate.date, lang)}
+              </span>
+            </p>
+            {latestUpdate.note === null ? null : (
+              <p className="mt-1 break-words text-sm text-slate-300">
+                <span className="font-medium">
+                  {dictionary.room.latestUpdate.noteLabel}:
+                </span>{" "}
+                {latestUpdate.note}
+              </p>
+            )}
+          </div>
+        )}
         {feed === null ? null : feed.lease === null ? (
           <p className="text-sm text-slate-300">{dictionary.room.emptyLease}</p>
         ) : (

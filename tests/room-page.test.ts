@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getRoomRepairs: vi.fn(),
   getBankAccount: vi.fn(),
   isAdminSession: vi.fn(),
+  todayInTaipei: vi.fn(),
 }));
 
 vi.mock("@/lib/session-cookies", () => ({
@@ -31,6 +32,11 @@ vi.mock("@/lib/appfeed/repairs", () => ({
 vi.mock("@/lib/bank-account", () => ({
   getBankAccount: mocks.getBankAccount,
 }));
+
+vi.mock("@/lib/appfeed/dates", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/appfeed/dates")>();
+  return { ...actual, todayInTaipei: mocks.todayInTaipei };
+});
 
 vi.mock("@/app/[lang]/logout-actions", () => ({
   logoutAction: vi.fn(),
@@ -61,6 +67,7 @@ const FEED_A: RoomFeed = {
     end: "2026-12-31",
     renewalDue: "2026-11-30",
   },
+  lastConfirmation: null,
   fetchedAt: "2026-11-01T04:00:00.000Z",
 };
 
@@ -81,6 +88,7 @@ const FEED_B: RoomFeed = {
   ],
   payments: [],
   lease: null,
+  lastConfirmation: null,
   fetchedAt: "2026-11-01T04:00:00.000Z",
 };
 
@@ -107,6 +115,14 @@ async function renderRoom(room: string, lang = "zh-TW"): Promise<string> {
   return renderToStaticMarkup(ui);
 }
 
+function renewalBanner(html: string): string {
+  return (
+    html.match(
+      /<section[^>]*aria-labelledby="renewal-reminder-heading"[\s\S]*?<\/section>/,
+    )?.[0] ?? ""
+  );
+}
+
 function summaryText(html: string): string | undefined {
   return html
     .match(/<summary[^>]*>([\s\S]*?)<\/summary>/)?.[1]
@@ -130,7 +146,9 @@ beforeEach(() => {
   mocks.getRoomFeed.mockReset();
   mocks.getRoomRepairs.mockReset();
   mocks.getBankAccount.mockReset();
+  mocks.todayInTaipei.mockReset();
 
+  mocks.todayInTaipei.mockReturnValue("2026-06-01");
   mocks.getSessionClaims.mockResolvedValue({
     role: "tenant",
     room: "a",
@@ -139,7 +157,11 @@ beforeEach(() => {
   });
   mocks.getRoomSessionVersion.mockResolvedValue(4);
   mocks.getRoomFeed.mockResolvedValue({ kind: "ok", feed: FEED_A });
-  mocks.getRoomRepairs.mockResolvedValue({ kind: "ok", repairs: [] });
+  mocks.getRoomRepairs.mockResolvedValue({
+    kind: "ok",
+    repairs: [],
+    lastDone: null,
+  });
   mocks.getBankAccount.mockResolvedValue(null);
 });
 
@@ -227,6 +249,124 @@ describe("room dashboard authorization", () => {
   });
 });
 
+describe("room dashboard renewal reminder", () => {
+  it("shows the reminder exactly 60 days before the lease end", async () => {
+    mocks.todayInTaipei.mockReturnValue("2026-11-01");
+
+    const html = await renderRoom("a");
+
+    expect(html).toContain("租約續約提醒");
+    expect(html).toContain("2026年12月31日");
+    expect(html).toContain("請聯絡房東討論續約");
+
+    const bannerIndex = html.indexOf("租約續約提醒");
+    expect(bannerIndex).toBeGreaterThan(-1);
+    expect(bannerIndex).toBeLessThan(html.indexOf("租約開始"));
+    expect(bannerIndex).toBeLessThan(html.indexOf("帳單"));
+  });
+
+  it("hides the reminder 61 days before the lease end", async () => {
+    mocks.todayInTaipei.mockReturnValue("2026-10-31");
+
+    const html = await renderRoom("a");
+
+    expect(html).not.toContain("租約續約提醒");
+    expect(html).toContain("租約開始");
+  });
+
+  it("shows the reminder on the lease end date", async () => {
+    mocks.todayInTaipei.mockReturnValue("2026-12-31");
+
+    const html = await renderRoom("a");
+
+    expect(html).toContain("租約續約提醒");
+    expect(html).toContain("2026年12月31日");
+  });
+
+  it("hides the reminder the day after the lease end", async () => {
+    mocks.todayInTaipei.mockReturnValue("2027-01-01");
+
+    const html = await renderRoom("a");
+
+    expect(html).not.toContain("租約續約提醒");
+  });
+
+  it("keeps the reminder when a renewal decision date is set", async () => {
+    mocks.todayInTaipei.mockReturnValue("2026-11-01");
+
+    const html = await renderRoom("a");
+
+    expect(html).toContain("租約續約提醒");
+    expect(html).toContain("續約決定截止日");
+    expect(html).toContain("2026年11月30日");
+  });
+
+  it("shows no reminder when the room has no lease", async () => {
+    mocks.getSessionClaims.mockResolvedValue({
+      role: "tenant",
+      room: "b",
+      v: 1,
+      exp: 1,
+    });
+    mocks.getRoomSessionVersion.mockResolvedValue(1);
+    mocks.getRoomFeed.mockResolvedValue({ kind: "ok", feed: FEED_B });
+    mocks.todayInTaipei.mockReturnValue("2026-12-01");
+
+    const html = await renderRoom("b");
+
+    expect(html).not.toContain("租約續約提醒");
+  });
+
+  it("shows no reminder when the room feed is unavailable", async () => {
+    mocks.getRoomFeed.mockResolvedValue({ kind: "unavailable" });
+    mocks.todayInTaipei.mockReturnValue("2026-12-01");
+
+    const html = await renderRoom("a");
+
+    expect(html).not.toContain("租約續約提醒");
+    expect(html).toContain("房間 A");
+  });
+
+  it("localizes the reminder heading and date in English", async () => {
+    mocks.todayInTaipei.mockReturnValue("2026-11-01");
+
+    const html = await renderRoom("a", "en");
+
+    expect(html).toContain("Lease renewal");
+    expect(html).toContain("Dec 31, 2026");
+    expect(html).toContain("Contact the landlord to discuss renewal.");
+  });
+
+  it("wraps the reminder without a fixed width or nowrap class", async () => {
+    mocks.todayInTaipei.mockReturnValue("2026-11-01");
+
+    const banner = renewalBanner(await renderRoom("a"));
+
+    expect(banner).toContain("flex flex-wrap");
+    expect(banner).toContain("break-words");
+    expect(banner).not.toContain("whitespace-nowrap");
+    expect(banner).not.toContain("<button");
+    expect(banner).not.toContain("<form");
+  });
+
+  it("does not show another room's reminder", async () => {
+    mocks.getSessionClaims.mockResolvedValue({
+      role: "tenant",
+      room: "b",
+      v: 1,
+      exp: 1,
+    });
+    mocks.getRoomSessionVersion.mockResolvedValue(1);
+    mocks.getRoomFeed.mockResolvedValue({ kind: "ok", feed: FEED_B });
+    mocks.todayInTaipei.mockReturnValue("2026-12-01");
+
+    const html = await renderRoom("b", "en");
+
+    expect(html).not.toContain("Lease renewal");
+    expect(html).not.toContain("Room A");
+  });
+});
+
 describe("room dashboard layout", () => {
   it("renders lease facts inside the header before the bills section", async () => {
     const zh = await renderRoom("a");
@@ -291,6 +431,133 @@ describe("room dashboard layout", () => {
     expect(english).toMatch(
       /<span class="[^"]*rounded-full[^"]*bg-amber-950[^"]*">open<\/span>/,
     );
+  });
+});
+
+describe("room dashboard latest update", () => {
+  const CONFIRMED = {
+    date: "2026-10-28",
+    note: "Transfer received.",
+  };
+
+  function withRepair(
+    date: string,
+    note: string | null,
+  ): { kind: "ok"; repairs: RoomRepair[]; lastDone: { date: string; note: string | null } } {
+    return {
+      kind: "ok",
+      repairs: [REPAIR_DONE],
+      lastDone: { date, note },
+    };
+  }
+
+  it("shows a completed repair in the header before the bills", async () => {
+    mocks.getRoomRepairs.mockResolvedValue(
+      withRepair("2026-10-30", "Fixed light in the kitchen"),
+    );
+
+    const zh = await renderRoom("a");
+    const en = await renderRoom("a", "en");
+
+    expect(zh).toContain("最新動態");
+    expect(zh).toContain("報修已完成");
+    expect(zh).toContain("2026年10月30日");
+    expect(zh).toContain("說明:");
+    expect(zh).toContain("Fixed light in the kitchen");
+    expect(en).toContain("Latest update");
+    expect(en).toContain("Repair completed");
+    expect(en).toContain("Oct 30, 2026");
+    expect(en).toContain("Note:");
+    expect(zh.indexOf("最新動態")).toBeLessThan(zh.indexOf("帳單"));
+    expect(zh).toMatch(/<header[\s\S]*最新動態[\s\S]*<\/header>/);
+  });
+
+  it("shows a confirmed claim instead of an older repair", async () => {
+    mocks.getRoomFeed.mockResolvedValue({
+      kind: "ok",
+      feed: { ...FEED_A, lastConfirmation: CONFIRMED },
+    });
+    mocks.getRoomRepairs.mockResolvedValue(withRepair("2026-10-25", "Old note"));
+
+    const zh = await renderRoom("a");
+    const en = await renderRoom("a", "en");
+
+    expect(zh).toContain("付款已確認");
+    expect(zh).toContain("2026年10月28日");
+    expect(zh).toContain("Transfer received.");
+    expect(zh).not.toContain("報修已完成");
+    expect(en).toContain("Payment confirmed");
+    expect(en).toContain("Oct 28, 2026");
+  });
+
+  it("shows the later repair when it is newer than the claim", async () => {
+    mocks.getRoomFeed.mockResolvedValue({
+      kind: "ok",
+      feed: { ...FEED_A, lastConfirmation: CONFIRMED },
+    });
+    mocks.getRoomRepairs.mockResolvedValue(withRepair("2026-10-30", "New note"));
+
+    const html = await renderRoom("a");
+
+    expect(html).toContain("報修已完成");
+    expect(html).toContain("2026年10月30日");
+    expect(html).not.toContain("付款已確認");
+  });
+
+  it("gives the claim the tie on the same date", async () => {
+    mocks.getRoomFeed.mockResolvedValue({
+      kind: "ok",
+      feed: { ...FEED_A, lastConfirmation: CONFIRMED },
+    });
+    mocks.getRoomRepairs.mockResolvedValue(withRepair("2026-10-28", "Tie note"));
+
+    const html = await renderRoom("a");
+
+    expect(html).toContain("付款已確認");
+    expect(html).not.toContain("報修已完成");
+    expect(html).not.toContain("Tie note");
+  });
+
+  it("renders no line when the room has no qualifying event", async () => {
+    const zh = await renderRoom("a");
+    const en = await renderRoom("a", "en");
+
+    expect(zh).not.toContain("最新動態");
+    expect(en).not.toContain("Latest update");
+    expect(zh).toContain("最後更新 2026年11月1日");
+  });
+
+  it("keeps the repair line when Bills is unavailable", async () => {
+    mocks.getRoomFeed.mockResolvedValue({ kind: "unavailable" });
+    mocks.getRoomRepairs.mockResolvedValue(withRepair("2026-10-30", "Repair only"));
+
+    const html = await renderRoom("a");
+
+    expect(html).toContain("報修已完成");
+    expect(html).toContain("Repair only");
+  });
+
+  it("keeps the claim line when Repairs is unavailable", async () => {
+    mocks.getRoomFeed.mockResolvedValue({
+      kind: "ok",
+      feed: { ...FEED_A, lastConfirmation: CONFIRMED },
+    });
+    mocks.getRoomRepairs.mockResolvedValue({ kind: "unavailable" });
+
+    const html = await renderRoom("a");
+
+    expect(html).toContain("付款已確認");
+    expect(html).toContain("Transfer received.");
+  });
+
+  it("renders no line when both sources are unavailable", async () => {
+    mocks.getRoomFeed.mockResolvedValue({ kind: "unavailable" });
+    mocks.getRoomRepairs.mockResolvedValue({ kind: "unavailable" });
+
+    const html = await renderRoom("a");
+
+    expect(html).not.toContain("最新動態");
+    expect(html).not.toContain("Latest update");
   });
 });
 
@@ -536,6 +803,7 @@ describe("room dashboard repairs", () => {
     mocks.getRoomRepairs.mockResolvedValue({
       kind: "ok",
       repairs: [REPAIR_PENDING, REPAIR_DONE],
+      lastDone: { date: "2026-10-25", note: null },
     });
 
     const html = await renderRoom("a");
@@ -561,6 +829,7 @@ describe("room dashboard repairs", () => {
     mocks.getRoomRepairs.mockResolvedValue({
       kind: "ok",
       repairs: [REPAIR_PENDING, REPAIR_DONE],
+      lastDone: { date: "2026-10-25", note: null },
     });
 
     const html = await renderRoom("a", "en");
@@ -616,6 +885,7 @@ describe("room dashboard repairs", () => {
     mocks.getRoomRepairs.mockResolvedValue({
       kind: "ok",
       repairs: [REPAIR_PENDING],
+      lastDone: null,
     });
 
     const html = await renderRoom("a", "en");

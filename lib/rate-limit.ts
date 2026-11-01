@@ -30,6 +30,12 @@ export const CLAIM_RATE_BUCKET: RateBucket = {
   windowSeconds: 15 * 60,
 };
 
+export const CLAIM_CONFIRM_RATE_BUCKET: RateBucket = {
+  prefix: "ratelimit:claim-confirm",
+  maxAttempts: 60,
+  windowSeconds: 15 * 60,
+};
+
 export const REPAIR_SUBMIT_RATE_BUCKET: RateBucket = {
   prefix: "ratelimit:repair-submit",
   maxAttempts: 10,

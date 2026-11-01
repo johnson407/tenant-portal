@@ -47,9 +47,10 @@ vi.mock("@/lib/appfeed/google", () => ({
   writeRepairDone: mocks.writeRepairDone,
 }));
 
-vi.mock("@/lib/appfeed/dates", () => ({
-  todayInTaipei: mocks.todayInTaipei,
-}));
+vi.mock("@/lib/appfeed/dates", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/appfeed/dates")>();
+  return { ...actual, todayInTaipei: mocks.todayInTaipei };
+});
 
 vi.mock("@/lib/appfeed/repair-lock", () => ({
   acquireRepairDoneLock: mocks.acquireRepairDoneLock,
@@ -80,9 +81,10 @@ function form(
   return data;
 }
 
-function doneForm(requestId = REQUEST_ID): FormData {
+function doneForm(requestId = REQUEST_ID, note?: string): FormData {
   const data = new FormData();
   data.set("requestId", requestId);
+  if (note !== undefined) data.set("note", note);
   return data;
 }
 
@@ -98,6 +100,7 @@ function pendingRow(overrides: Partial<Record<number, unknown>> = {}): unknown[]
     "Leaking tap in the bathroom",
     "2026-10-30",
     "pending",
+    "",
     "",
   ];
   for (const [index, value] of Object.entries(overrides)) {
@@ -349,11 +352,66 @@ describe("markRepairDoneAction", () => {
     );
 
     expect(state).toEqual({ status: "success" });
-    expect(mocks.writeRepairDone).toHaveBeenCalledWith(2, "2026-11-01");
+    expect(mocks.writeRepairDone).toHaveBeenCalledWith(2, "2026-11-01", "");
     expect(mocks.revalidateTag).toHaveBeenCalledWith(
       "appfeed:repairs:room:a",
       { expire: 0 },
     );
+  });
+
+  it("marks a pending request done with a trimmed note", async () => {
+    mocks.fetchRepairsSnapshot
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: repairSnapshot([pendingRow()]),
+      })
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: repairSnapshot([
+          pendingRow({
+            5: "done",
+            6: "2026-11-01",
+            7: "Fixed the tap",
+          }),
+        ]),
+      });
+
+    const state = await markRepairDoneAction(
+      "en",
+      { status: "idle" },
+      doneForm(REQUEST_ID, "  Fixed the tap  "),
+    );
+
+    expect(state).toEqual({ status: "success" });
+    expect(mocks.writeRepairDone).toHaveBeenCalledWith(
+      2,
+      "2026-11-01",
+      "Fixed the tap",
+    );
+  });
+
+  it("rejects an invalid note before the rate limit and write", async () => {
+    const state = await markRepairDoneAction(
+      "en",
+      { status: "idle" },
+      doneForm(REQUEST_ID, "Contact jane@example.com"),
+    );
+
+    expect(state).toEqual({ status: "error", message: "invalid-note" });
+    expect(mocks.consumeAttempt).not.toHaveBeenCalled();
+    expect(mocks.fetchRepairsSnapshot).not.toHaveBeenCalled();
+    expect(mocks.writeRepairDone).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-string note without a write", async () => {
+    const data = new FormData();
+    data.set("requestId", REQUEST_ID);
+    data.set("note", new File(["note"], "note.txt"));
+
+    const state = await markRepairDoneAction("en", { status: "idle" }, data);
+
+    expect(state).toEqual({ status: "error", message: "invalid-note" });
+    expect(mocks.writeRepairDone).not.toHaveBeenCalled();
   });
 
   it("rejects a concurrent completion without a second write", async () => {

@@ -171,8 +171,13 @@ describe("repair done form", () => {
     expect(zh).toContain('name="requestId"');
     expect(zh).toContain(`value="${REQUEST_ID}"`);
     expect(zh).toContain("標記為完成");
+    expect(zh).toContain('name="note"');
+    expect(zh).toContain("完成說明（選填）");
+    expect(zh).toContain('maxLength="200"');
     expect(enHtml).toContain(`value="${REQUEST_ID}"`);
     expect(enHtml).toContain("Mark done");
+    expect(enHtml).toContain('name="note"');
+    expect(enHtml).toContain("Completion note (optional)");
   });
 
   it.each([
@@ -182,6 +187,11 @@ describe("repair done form", () => {
       "This request is already done.",
     ],
     ["not-found", "找不到此申請。", "This request was not found."],
+    [
+      "invalid-note",
+      "請輸入簡短說明，且不要包含電子郵件、網址或長串數字。",
+      "Use a short note with no email, URL, or long number.",
+    ],
     [
       "unavailable",
       "無法更新申請",

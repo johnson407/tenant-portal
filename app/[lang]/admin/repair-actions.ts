@@ -1,7 +1,6 @@
 "use server";
 
 import { completeRepair } from "@/lib/appfeed/repairs";
-import { DEFAULT_LOCALE, isLocale } from "@/lib/i18n/config";
 import { isAdminSession } from "@/lib/session-cookies";
 
 import {
@@ -10,12 +9,10 @@ import {
 } from "./repair-state";
 
 export async function markRepairDoneAction(
-  localeInput: string,
+  _localeInput: string,
   _previous: RepairDoneState,
   formData: FormData,
 ): Promise<RepairDoneState> {
-  const locale = isLocale(localeInput) ? localeInput : DEFAULT_LOCALE;
-  void locale;
   void _previous;
 
   if (!(await isAdminSession())) {
@@ -27,9 +24,14 @@ export async function markRepairDoneAction(
     return { status: "error", message: "not-found" };
   }
 
+  const note = formData.get("note");
+  if (note !== null && typeof note !== "string") {
+    return { status: "error", message: "invalid-note" };
+  }
+
   let result: Awaited<ReturnType<typeof completeRepair>>;
   try {
-    result = await completeRepair(requestId);
+    result = await completeRepair(requestId, note ?? "");
   } catch {
     console.error("[repairs] completion action failed");
     return { status: "error", message: GENERIC_REPAIR_DONE_ERROR };
@@ -42,6 +44,7 @@ export async function markRepairDoneAction(
   if (
     result.reason === "already-done" ||
     result.reason === "not-found" ||
+    result.reason === "invalid-note" ||
     result.reason === "unavailable" ||
     result.reason === "rate"
   ) {

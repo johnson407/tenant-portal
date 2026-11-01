@@ -14,6 +14,7 @@ import {
   REPAIRS_RANGE,
   hasExactHeaderRow,
   isRealIsoDate,
+  isValidOptionalNote,
   parseRepairRow,
 } from "./validate";
 
@@ -22,7 +23,7 @@ const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 const SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 const JWT_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 const EXPECTED_TITLE = "AppFeed";
-const BILLS_RANGE = "Bills!A:O";
+const BILLS_RANGE = "Bills!A:Q";
 const LEASES_RANGE = "Leases!A:D";
 const TIMEOUT_MS = 8000;
 const TOKEN_EXPIRY_SKEW_MS = 60_000;
@@ -346,7 +347,121 @@ export async function writeClaimCells(
 }
 
 /**
- * Appends one complete pending repair row to `Repairs!A:G`. Uses RAW input so
+ * Writes the confirmation date and optional note to `Bills!P{row}:Q{row}`.
+ * The caller writes this before the paid date, so a failure leaves the claim
+ * pending and visible in the admin queue.
+ */
+export async function writeClaimConfirmation(
+  rowNumber: number,
+  confirmedOn: string,
+  confirmNote = "",
+): Promise<{ kind: "ok" } | SnapshotFailure> {
+  if (
+    !Number.isSafeInteger(rowNumber) ||
+    rowNumber < 2 ||
+    !isRealIsoDate(confirmedOn) ||
+    !isValidOptionalNote(confirmNote)
+  ) {
+    return failure("server");
+  }
+
+  const note = confirmNote.trim();
+  const credentials = readCredentials();
+  if (!credentials) return failure("config");
+
+  const signal = AbortSignal.timeout(TIMEOUT_MS);
+  const token = await getAccessToken(credentials, signal);
+  if (token.kind === "unavailable") return token;
+
+  const range = `Bills!P${rowNumber}:Q${rowNumber}`;
+  const url = `${SHEETS_API}/${encodeURIComponent(
+    credentials.spreadsheetId,
+  )}/values/${range}?valueInputOption=RAW`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${token.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        values: [[confirmedOn, note]],
+      }),
+      signal,
+      redirect: "error",
+      cache: "no-store",
+    });
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  if (!response.ok) return statusFailure(response.status);
+
+  try {
+    await readJson(response);
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  return { kind: "ok" };
+}
+
+/**
+ * Writes only `Bills!G{row}` with the paid date. The caller writes the
+ * confirmation cells first, so a failure here keeps the claim pending.
+ */
+export async function writeBillPaidOn(
+  rowNumber: number,
+  paidOn: string,
+): Promise<{ kind: "ok" } | SnapshotFailure> {
+  if (!Number.isSafeInteger(rowNumber) || rowNumber < 2 || !isRealIsoDate(paidOn)) {
+    return failure("server");
+  }
+
+  const credentials = readCredentials();
+  if (!credentials) return failure("config");
+
+  const signal = AbortSignal.timeout(TIMEOUT_MS);
+  const token = await getAccessToken(credentials, signal);
+  if (token.kind === "unavailable") return token;
+
+  const range = `Bills!G${rowNumber}`;
+  const url = `${SHEETS_API}/${encodeURIComponent(
+    credentials.spreadsheetId,
+  )}/values/${range}?valueInputOption=RAW`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${token.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ values: [[paidOn]] }),
+      signal,
+      redirect: "error",
+      cache: "no-store",
+    });
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  if (!response.ok) return statusFailure(response.status);
+
+  try {
+    await readJson(response);
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  return { kind: "ok" };
+}
+
+/**
+ * Appends one complete pending repair row to `Repairs!A:H`. Uses RAW input so
  * Sheets keeps dates and the request ID as text. Only an append is requested;
  * no existing row, tab, or column is changed.
  */
@@ -360,6 +475,7 @@ export async function appendRepairRow(
     repair.note,
     repair.submittedOn,
     "pending",
+    "",
     "",
   ]);
   if (!parsed) return failure("server");
@@ -393,6 +509,7 @@ export async function appendRepairRow(
             parsed.submittedOn,
             "pending",
             "",
+            "",
           ],
         ],
       }),
@@ -416,20 +533,25 @@ export async function appendRepairRow(
 }
 
 /**
- * Writes `done` and the completion date to `Repairs!F{row}:G{row}`. The caller
- * finds the row after a fresh read; no saved row number is trusted across reads.
+ * Writes `done`, the completion date, and the optional note to
+ * `Repairs!F{row}:H{row}`. The caller finds the row after a fresh read; no
+ * saved row number is trusted across reads.
  */
 export async function writeRepairDone(
   rowNumber: number,
   doneOn: string,
+  doneNote = "",
 ): Promise<{ kind: "ok" } | SnapshotFailure> {
   if (
     !Number.isSafeInteger(rowNumber) ||
     rowNumber < 2 ||
-    !isRealIsoDate(doneOn)
+    !isRealIsoDate(doneOn) ||
+    !isValidOptionalNote(doneNote)
   ) {
     return failure("server");
   }
+
+  const note = doneNote.trim();
 
   const credentials = readCredentials();
   if (!credentials) return failure("config");
@@ -438,7 +560,7 @@ export async function writeRepairDone(
   const token = await getAccessToken(credentials, signal);
   if (token.kind === "unavailable") return token;
 
-  const range = `Repairs!F${rowNumber}:G${rowNumber}`;
+  const range = `Repairs!F${rowNumber}:H${rowNumber}`;
   const url = `${SHEETS_API}/${encodeURIComponent(
     credentials.spreadsheetId,
   )}/values/${range}?valueInputOption=RAW`;
@@ -451,7 +573,7 @@ export async function writeRepairDone(
         authorization: `Bearer ${token.token}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ values: [["done", doneOn]] }),
+      body: JSON.stringify({ values: [["done", doneOn, note]] }),
       signal,
       redirect: "error",
       cache: "no-store",

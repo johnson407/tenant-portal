@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   consumeAttempt: vi.fn(),
   fetchAppFeedSnapshot: vi.fn(),
   writeClaimCells: vi.fn(),
+  writeClaimConfirmation: vi.fn(),
+  writeBillPaidOn: vi.fn(),
+  acquireClaimConfirmLock: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({
@@ -29,15 +32,27 @@ vi.mock("@/lib/rate-limit", () => ({
     maxAttempts: 10,
     windowSeconds: 900,
   },
+  CLAIM_CONFIRM_RATE_BUCKET: {
+    prefix: "ratelimit:claim-confirm",
+    maxAttempts: 60,
+    windowSeconds: 900,
+  },
   consumeAttempt: mocks.consumeAttempt,
 }));
 
 vi.mock("@/lib/appfeed/google", () => ({
   fetchAppFeedSnapshot: mocks.fetchAppFeedSnapshot,
   writeClaimCells: mocks.writeClaimCells,
+  writeClaimConfirmation: mocks.writeClaimConfirmation,
+  writeBillPaidOn: mocks.writeBillPaidOn,
+}));
+
+vi.mock("@/lib/appfeed/claim-lock", () => ({
+  acquireClaimConfirmLock: mocks.acquireClaimConfirmLock,
 }));
 
 import {
+  confirmClaim,
   listPendingClaims,
   parseClaimInput,
   submitClaim,
@@ -54,6 +69,12 @@ function bill(overrides: Partial<Record<number, unknown>> = {}): unknown[] {
     "",
     "",
     "2026-11-01",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
     "",
     "",
     "",
@@ -82,8 +103,23 @@ beforeEach(() => {
   });
   mocks.fetchAppFeedSnapshot.mockResolvedValue({ kind: "ok", snapshot: snapshot() });
   mocks.writeClaimCells.mockResolvedValue({ kind: "ok" });
+  mocks.writeClaimConfirmation.mockResolvedValue({ kind: "ok" });
+  mocks.writeBillPaidOn.mockResolvedValue({ kind: "ok" });
+  mocks.acquireClaimConfirmLock.mockResolvedValue(async () => {});
   mocks.isAdminSession.mockResolvedValue(true);
 });
+
+function claimedBill(overrides: Partial<Record<number, unknown>> = {}): unknown[] {
+  return bill({ 7: "2026-10-28", 8: "01234", 15: "", 16: "", ...overrides });
+}
+
+function confirmedBill(
+  paidOn: string,
+  confirmedOn: string,
+  note = "",
+): unknown[] {
+  return claimedBill({ 6: paidOn, 15: confirmedOn, 16: note });
+}
 
 describe("todayInTaipei", () => {
   it("uses the Taipei calendar day, not the UTC day", () => {
@@ -172,6 +208,24 @@ describe("submitClaim", () => {
     mocks.fetchAppFeedSnapshot.mockResolvedValue({
       kind: "ok",
       snapshot: snapshot([bill({ 6: "2026-10-30" })]),
+    });
+
+    const result = await submitClaim("a", "2026-10", VALID_INPUT);
+
+    expect(result).toEqual({ kind: "error", reason: "unavailable" });
+    expect(mocks.writeClaimCells).not.toHaveBeenCalled();
+  });
+
+  it("rejects a bill with a partial confirmation", async () => {
+    mocks.fetchAppFeedSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: snapshot([
+        bill({
+          7: "2026-10-28",
+          8: "01234",
+          15: "2026-10-31",
+        }),
+      ]),
     });
 
     const result = await submitClaim("a", "2026-10", VALID_INPUT);
@@ -273,6 +327,277 @@ describe("submitClaim", () => {
       room: "a",
       period: "",
       reason: "read",
+    });
+  });
+});
+
+describe("confirmClaim", () => {
+  const PAID_ON = "2026-10-30";
+
+  it("writes the confirmation, then the paid date, and refreshes only room a", async () => {
+    const confirmedOn = todayInTaipei();
+    mocks.fetchAppFeedSnapshot
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: snapshot([claimedBill()]),
+      })
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: snapshot([
+          confirmedBill(PAID_ON, confirmedOn, "Thank you"),
+        ]),
+      });
+
+    const result = await confirmClaim(
+      "a",
+      "2026-10",
+      PAID_ON,
+      "  Thank you  ",
+    );
+
+    expect(result).toEqual({ kind: "ok" });
+    expect(mocks.acquireClaimConfirmLock).toHaveBeenCalledWith("a", "2026-10");
+    expect(mocks.writeClaimConfirmation).toHaveBeenCalledWith(
+      2,
+      confirmedOn,
+      "Thank you",
+    );
+    expect(mocks.writeBillPaidOn).toHaveBeenCalledWith(2, PAID_ON);
+    expect(
+      mocks.writeClaimConfirmation.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.writeBillPaidOn.mock.invocationCallOrder[0]);
+    expect(mocks.writeBillPaidOn.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.revalidateTag.mock.invocationCallOrder[0],
+    );
+    expect(mocks.revalidateTag).toHaveBeenCalledWith("appfeed:room:a", {
+      expire: 0,
+    });
+    expect(mocks.revalidateTag).toHaveBeenCalledTimes(1);
+  });
+
+  it("limits by admin client IP before reading the sheet", async () => {
+    mocks.fetchAppFeedSnapshot
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: snapshot([claimedBill()]),
+      })
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: snapshot([
+          confirmedBill(PAID_ON, todayInTaipei()),
+        ]),
+      });
+
+    await confirmClaim("a", "2026-10", PAID_ON);
+
+    expect(mocks.consumeAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ prefix: "ratelimit:claim-confirm" }),
+      ["ip:203.0.113.9"],
+    );
+    expect(mocks.consumeAttempt.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.fetchAppFeedSnapshot.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("denies a tenant or anonymous caller before reading", async () => {
+    mocks.isAdminSession.mockResolvedValue(false);
+
+    expect(await confirmClaim("a", "2026-10", PAID_ON)).toEqual({
+      kind: "denied",
+    });
+    expect(mocks.fetchAppFeedSnapshot).not.toHaveBeenCalled();
+    expect(mocks.writeClaimConfirmation).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a future date", "2999-01-01"],
+    ["an impossible date", "2026-02-30"],
+    ["a formatted date", "2026/10/30"],
+    ["a blank date", ""],
+  ])("rejects %s before the rate limit", async (_label, paidOn) => {
+    const result = await confirmClaim("a", "2026-10", paidOn);
+
+    expect(result).toEqual({ kind: "error", reason: "date" });
+    expect(mocks.consumeAttempt).not.toHaveBeenCalled();
+    expect(mocks.writeClaimConfirmation).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["an email", "Contact jane@example.com"],
+    ["a URL", "See https://example.com"],
+    ["seven digits", "Reference 1234567"],
+    ["a control character", "Line\nbreak"],
+    ["more than 200 characters", "x".repeat(201)],
+  ])("rejects a note with %s before the rate limit", async (_label, note) => {
+    const result = await confirmClaim("a", "2026-10", PAID_ON, note);
+
+    expect(result).toEqual({ kind: "error", reason: "note" });
+    expect(mocks.consumeAttempt).not.toHaveBeenCalled();
+    expect(mocks.writeClaimConfirmation).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed period without a write", async () => {
+    const result = await confirmClaim("a", "2026-10\nforged", PAID_ON);
+
+    expect(result).toEqual({ kind: "error", reason: "not-found" });
+    expect(mocks.writeClaimConfirmation).not.toHaveBeenCalled();
+  });
+
+  it("rejects a paid bill without a write", async () => {
+    mocks.fetchAppFeedSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: snapshot([claimedBill({ 6: PAID_ON })]),
+    });
+
+    const result = await confirmClaim("a", "2026-10", PAID_ON);
+
+    expect(result).toEqual({ kind: "error", reason: "paid" });
+    expect(mocks.writeClaimConfirmation).not.toHaveBeenCalled();
+    expect(mocks.writeBillPaidOn).not.toHaveBeenCalled();
+  });
+
+  it("rejects a bill with no claim without a write", async () => {
+    mocks.fetchAppFeedSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: snapshot([bill()]),
+    });
+
+    const result = await confirmClaim("a", "2026-10", PAID_ON);
+
+    expect(result).toEqual({ kind: "error", reason: "not-found" });
+    expect(mocks.writeClaimConfirmation).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown period without a write", async () => {
+    const result = await confirmClaim("a", "2026-09", PAID_ON);
+
+    expect(result).toEqual({ kind: "error", reason: "not-found" });
+    expect(mocks.writeClaimConfirmation).not.toHaveBeenCalled();
+  });
+
+  it("rejects when another confirmation holds the lock", async () => {
+    mocks.acquireClaimConfirmLock.mockResolvedValue(null);
+
+    const result = await confirmClaim("a", "2026-10", PAID_ON);
+
+    expect(result).toEqual({ kind: "error", reason: "unavailable" });
+    expect(mocks.fetchAppFeedSnapshot).not.toHaveBeenCalled();
+    expect(mocks.writeClaimConfirmation).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the lock store is unavailable", async () => {
+    mocks.acquireClaimConfirmLock.mockRejectedValue(
+      new Error("KV store is not configured"),
+    );
+
+    const result = await confirmClaim("a", "2026-10", PAID_ON);
+
+    expect(result).toEqual({ kind: "error", reason: "unavailable" });
+    expect(mocks.fetchAppFeedSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("rejects the write when the limiter denies", async () => {
+    mocks.consumeAttempt.mockResolvedValue({
+      allowed: false,
+      retryAfterSeconds: 60,
+    });
+
+    const result = await confirmClaim("a", "2026-10", PAID_ON);
+
+    expect(result).toEqual({ kind: "error", reason: "rate" });
+    expect(mocks.fetchAppFeedSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when KV is unavailable", async () => {
+    mocks.consumeAttempt.mockRejectedValue(
+      new Error("KV store is not configured"),
+    );
+
+    const result = await confirmClaim("a", "2026-10", PAID_ON);
+
+    expect(result).toEqual({ kind: "error", reason: "unavailable" });
+    expect(mocks.fetchAppFeedSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("does not write the paid date when the confirmation write fails", async () => {
+    mocks.fetchAppFeedSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: snapshot([claimedBill()]),
+    });
+    mocks.writeClaimConfirmation.mockResolvedValue({
+      kind: "unavailable",
+      reason: "timeout",
+      transient: true,
+    });
+
+    const result = await confirmClaim("a", "2026-10", PAID_ON);
+
+    expect(result).toEqual({ kind: "error", reason: "unavailable" });
+    expect(mocks.writeClaimConfirmation).toHaveBeenCalledTimes(1);
+    expect(mocks.writeBillPaidOn).not.toHaveBeenCalled();
+    expect(mocks.revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it("keeps the claim pending when the paid write fails", async () => {
+    mocks.fetchAppFeedSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: snapshot([claimedBill()]),
+    });
+    mocks.writeBillPaidOn.mockResolvedValue({
+      kind: "unavailable",
+      reason: "server",
+      transient: false,
+    });
+
+    const result = await confirmClaim("a", "2026-10", PAID_ON);
+
+    expect(result).toEqual({ kind: "error", reason: "unavailable" });
+    expect(mocks.writeClaimConfirmation).toHaveBeenCalledTimes(1);
+    expect(mocks.writeBillPaidOn).toHaveBeenCalledTimes(1);
+    expect(mocks.revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it("fails when verification does not show the expected row", async () => {
+    mocks.fetchAppFeedSnapshot
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: snapshot([claimedBill()]),
+      })
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: snapshot([
+          confirmedBill(PAID_ON, todayInTaipei(), "A different note"),
+        ]),
+      });
+
+    const result = await confirmClaim("a", "2026-10", PAID_ON);
+
+    expect(result).toEqual({ kind: "error", reason: "unavailable" });
+    expect(mocks.revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it("logs no note or suffix when a write fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mocks.fetchAppFeedSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: snapshot([claimedBill()]),
+    });
+    mocks.writeBillPaidOn.mockResolvedValue({
+      kind: "unavailable",
+      reason: "server",
+      transient: false,
+    });
+
+    await confirmClaim("a", "2026-10", PAID_ON, "Thank you");
+
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).not.toContain("Thank you");
+    expect(logged).not.toContain("01234");
+    expect(logged).not.toContain(PAID_ON);
+    expect(warn).toHaveBeenCalledWith("[claims] confirmation not saved", {
+      room: "a",
+      period: "2026-10",
+      reason: "paid-write",
     });
   });
 });

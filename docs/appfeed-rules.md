@@ -10,12 +10,13 @@ it, and never share that file with the service account.
 - Keep exactly these tabs: `Bills` and `Leases`, plus the optional `Repairs`
   tab. No other tab is allowed. Remove hidden tabs.
 - Keep the `Bills` header row exactly:
-  `room, period, rent, water, electricity, due_date, paid_on, claimed_on, bank_last5, water_start, water_end, water_rate, electricity_start, electricity_end, electricity_rate`
+  `room, period, rent, water, electricity, due_date, paid_on, claimed_on, bank_last5, water_start, water_end, water_rate, electricity_start, electricity_end, electricity_rate, confirmed_on, confirm_note`
 - Keep the `Leases` header row exactly:
   `room, lease_start, lease_end, renewal_due`
 - Keep the `Repairs` header row exactly:
-  `room, request_id, category, note, submitted_on, status, done_on`
-- Do not rename, reorder, or insert columns. The app reads only these columns.
+  `room, request_id, category, note, submitted_on, status, done_on, done_note`
+- Do not rename, reorder, or insert columns. The app reads only `Bills!A:Q`,
+  `Leases!A:D`, and `Repairs!A:H`.
 
 ## Bills and Leases cells
 
@@ -36,8 +37,18 @@ it, and never share that file with the service account.
   leading zero in `bank_last5` is lost when Sheets treats the cell as a number.
 - Enter `claimed_on` as `YYYY-MM-DD`. Enter `bank_last5` as exactly five digits;
   never enter a full account number.
-- To confirm a claim, enter the received date in `paid_on`. The claim leaves the
-  admin list, and the bill moves to Payments.
+- `confirmed_on` and `confirm_note` hold the admin confirmation. The app writes
+  them from the admin console. Leave both blank for a claim that is not confirmed.
+- To confirm a claim, the app first writes `Bills!P:Q` with the confirmation date
+  and note. It then writes `Bills!G` with the paid date. This order keeps the
+  claim pending if the second write fails. The admin can then retry.
+- A manual `paid_on` edit does not set `confirmed_on`. The tenant latest-update
+  line does not change.
+- `confirmed_on` is a real `YYYY-MM-DD` date. It needs both claim cells. It must
+  not be earlier than `claimed_on` or `paid_on`. A blank `paid_on` is allowed
+  during the two-step confirmation write.
+- `confirm_note` is optional. It needs `confirmed_on`. It follows the same note
+  rules as the repair note.
 - Do not use formulas that reference the main rent file. Enter values only.
 
 ## Meter readings
@@ -68,7 +79,7 @@ it, and never share that file with the service account.
 
 ## Repairs cells
 
-- Set `Repairs!A:G` to plain text before tenants use the form. This keeps the
+- Set `Repairs!A:H` to plain text before tenants use the form. This keeps the
   request ID and every date as text.
 - Use one row per repair request.
 - `room` holds `A` to `E`.
@@ -85,9 +96,14 @@ it, and never share that file with the service account.
 - `status` holds `pending` or `done`.
 - `done_on` is blank for a pending request. It holds `YYYY-MM-DD` for a done
   request. The app writes it.
+- `done_note` is optional. It is blank for a pending request. A done request can
+  have a blank note or a valid note. The admin writes it when the request is
+  marked done.
+- A note holds 1 to 200 printable characters. Do not use line breaks or tabs.
+  Do not enter an email address, a URL, or a run of seven or more digits.
 - When a tenant submits a request, the app appends one complete row to
-  `Repairs!A:G`. When an admin marks a request done, the app changes only
-  `F:G` of that row. It never changes `A:E`, deletes a row, or changes the
+  `Repairs!A:H`. When an admin marks a request done, the app changes only
+  `F:H` of that row. It never changes `A:E`, deletes a row, or changes the
   sheet structure.
 - Do not use formulas in the `Repairs` tab. Enter values only.
 
@@ -117,8 +133,8 @@ To roll back:
 
 ## Repairs deploy order
 
-Do the meter reading steps above first. The new app requires all fifteen `Bills`
-headers, so it fails on a sheet without `J:O`.
+Do the meter reading steps above first. The new app requires all seventeen `Bills`
+headers, so it fails on a sheet without `J:O` or `P:Q`.
 
 The app accepts two tab sets: `Bills` and `Leases`, or `Bills`, `Leases`, and
 `Repairs`. The current released app accepts only the two-tab set. Do these steps
@@ -129,7 +145,7 @@ in order:
    before the first dashboard read.
 2. Deploy the new app. Bills, payments, and lease work. The repair section shows
    unavailable until the tab exists.
-3. Add the `Repairs` tab with the exact header above. Set `A:G` to plain text.
+3. Add the `Repairs` tab with the exact header above. Set `A:H` to plain text.
 4. Wait up to 15 minutes for the room repair cache to expire, or redeploy the
    app. The cache can hold an unavailable result for this time.
 5. Open a room dashboard and submit a test request. Mark it done in the admin
@@ -146,6 +162,30 @@ To roll back:
 
 Do not deploy the previous app while the `Repairs` tab exists. It rejects a
 third tab and makes every room unavailable.
+
+## Confirmation and completion deploy order
+
+The current released app reads `Bills!A:O` and `Repairs!A:G`. It ignores the
+trailing confirmation and completion columns, so the sheet can hold the new
+headers before the new app deploys. Do these steps in order:
+
+1. Add `confirmed_on` and `confirm_note` to `Bills!P1:Q1`.
+2. Add `done_note` to `Repairs!H1`.
+3. Set `Bills!P:Q` and `Repairs!H` to plain text.
+4. Open a room dashboard on the released app and confirm that the room still
+   shows its bills and repairs. The released app reads only `A:O` and `A:G`.
+5. Deploy the new app.
+6. Confirm one test claim in the admin console and mark one test repair done.
+   Confirm the tenant line in both locales.
+
+Never insert the new columns before `bank_last5` or `done_on`, and never reorder
+the headers.
+
+To roll back:
+
+1. Deploy the previous app version.
+2. Leave `Bills!P:Q` and `Repairs!H` in place. The previous app ignores these
+   columns, so no sheet edit is necessary.
 
 ## Sharing
 

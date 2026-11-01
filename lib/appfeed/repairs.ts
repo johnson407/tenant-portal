@@ -25,6 +25,7 @@ import {
   buildRoomRepairs,
   findRepairRow,
   isRepairCategory,
+  isValidOptionalNote,
   isValidRepairNote,
 } from "./validate";
 import { todayInTaipei } from "./dates";
@@ -52,7 +53,13 @@ export type CompleteRepairResult =
   | { kind: "denied" }
   | {
       kind: "error";
-      reason: "already-done" | "not-found" | "unavailable" | "rate" | "generic";
+      reason:
+        | "already-done"
+        | "not-found"
+        | "invalid-note"
+        | "unavailable"
+        | "rate"
+        | "generic";
     };
 
 function text(value: unknown): string {
@@ -217,10 +224,12 @@ export async function submitRepair(
 
 /**
  * Marks one pending repair done. Reads fresh, rejects an unknown or completed
- * request, writes only the status cells, and refreshes that room's history.
+ * request, writes the status, completion date, and optional note, and
+ * refreshes that room's history.
  */
 export async function completeRepair(
   requestId: string,
+  doneNote = "",
 ): Promise<CompleteRepairResult> {
   if (!(await isAdminSession())) return { kind: "denied" };
 
@@ -228,6 +237,11 @@ export async function completeRepair(
   if (!REPAIR_ID_PATTERN.test(id)) {
     return { kind: "error", reason: "not-found" };
   }
+
+  if (typeof doneNote !== "string" || !isValidOptionalNote(doneNote)) {
+    return { kind: "error", reason: "invalid-note" };
+  }
+  const note = doneNote.trim();
 
   let allowed = false;
   try {
@@ -287,7 +301,7 @@ export async function completeRepair(
       return { kind: "error", reason: "unavailable" };
     }
 
-    const written = await writeRepairDone(lookup.rowNumber, doneOn);
+    const written = await writeRepairDone(lookup.rowNumber, doneOn, note);
     if (written.kind !== "ok") {
       console.warn("[repairs] completion not saved", { reason: "write" });
       return { kind: "error", reason: "unavailable" };
@@ -309,7 +323,8 @@ export async function completeRepair(
       !verified.ok ||
       verified.rowNumber !== lookup.rowNumber ||
       verified.repair.status !== "done" ||
-      verified.repair.doneOn !== doneOn
+      verified.repair.doneOn !== doneOn ||
+      (verified.repair.doneNote ?? "") !== note
     ) {
       console.warn("[repairs] completion not saved", { reason: "verify" });
       return { kind: "error", reason: "unavailable" };

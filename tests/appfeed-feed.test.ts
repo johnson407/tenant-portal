@@ -131,6 +131,159 @@ describe("getRoomFeed", () => {
     ]);
   });
 
+  it("keeps the latest confirmation outside the payment cap", async () => {
+    const bills: unknown[][] = [[...BILLS_HEADER]];
+    for (let month = 1; month <= 12; month += 1) {
+      bills.push([
+        "a",
+        `2026-${String(month).padStart(2, "0")}`,
+        "750",
+        "",
+        "",
+        "2026-12-01",
+        "2026-02-05",
+        "2026-02-01",
+        "01234",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "2026-02-06",
+        "",
+      ]);
+    }
+    bills.push([
+      "a",
+      "2025-12",
+      "750",
+      "",
+      "",
+      "2025-12-01",
+      "2025-01-01",
+      "2025-01-01",
+      "01234",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "2026-11-01",
+      "Old payment, newest confirmation",
+    ]);
+
+    mocks.fetchAppFeedSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: { bills, leases: [[...LEASES_HEADER]] },
+    });
+
+    const result = await getRoomFeed("a");
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.feed.payments).toHaveLength(12);
+    expect(result.feed.lastConfirmation).toEqual({
+      date: "2026-11-01",
+      note: "Old payment, newest confirmation",
+    });
+  });
+
+  it("uses the confirmation date, not the paid date", async () => {
+    const bills: unknown[][] = [
+      [...BILLS_HEADER],
+      [
+        "a",
+        "2026-01",
+        "750",
+        "",
+        "",
+        "2026-01-01",
+        "2026-09-08",
+        "2026-08-01",
+        "01234",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "2026-09-10",
+        "Newer confirmation",
+      ],
+      [
+        "a",
+        "2026-02",
+        "750",
+        "",
+        "",
+        "2026-02-01",
+        "2026-09-09",
+        "2026-08-01",
+        "01234",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "2026-09-09",
+        "Newer payment",
+      ],
+    ];
+
+    mocks.fetchAppFeedSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: { bills, leases: [[...LEASES_HEADER]] },
+    });
+
+    const result = await getRoomFeed("a");
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.feed.lastConfirmation).toEqual({
+      date: "2026-09-10",
+      note: "Newer confirmation",
+    });
+  });
+
+  it("does not treat a manual paid date as a confirmation", async () => {
+    const bills: unknown[][] = [
+      [...BILLS_HEADER],
+      [
+        "a",
+        "2026-01",
+        "750",
+        "",
+        "",
+        "2026-02-01",
+        "2026-02-05",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ],
+    ];
+
+    mocks.fetchAppFeedSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: { bills, leases: [[...LEASES_HEADER]] },
+    });
+
+    const result = await getRoomFeed("a");
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.feed.lastConfirmation).toBeNull();
+  });
+
   it("uses the configured cache profile and per-room tag", async () => {
     await getRoomFeed("a");
 

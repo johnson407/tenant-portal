@@ -24,11 +24,11 @@ The system SHALL read dashboard bills, payments, lease dates, and repair request
 
 ### Requirement: Bills tab schema
 
-The `Bills` tab SHALL expose exactly the header row `room, period, rent, water, electricity, due_date, paid_on, claimed_on, bank_last5, water_start, water_end, water_rate, electricity_start, electricity_end, electricity_rate` in that order. It SHALL hold one row per room per billing period, with room A-E, period `YYYY-MM`, whole-NT$ rent, optional whole-NT$ water and electricity, an ISO due date, an optional ISO paid date, optional claim fields, and an optional meter group per utility. A meter group SHALL hold whole-number readings and an NT$ rate with up to four decimal places. A row SHALL have both claim cells empty or both filled. Deposit is excluded.
+The `Bills` tab SHALL expose exactly the header row `room, period, rent, water, electricity, due_date, paid_on, claimed_on, bank_last5, water_start, water_end, water_rate, electricity_start, electricity_end, electricity_rate, confirmed_on, confirm_note` in that order. It SHALL hold one row per room per billing period, with room A-E, period `YYYY-MM`, whole-NT$ rent, optional whole-NT$ water and electricity, an ISO due date, an optional ISO paid date, optional claim fields, an optional meter group per utility, and optional confirmation fields. A meter group SHALL hold whole-number readings and an NT$ rate with up to four decimal places. A row SHALL have both claim cells empty or both filled. A confirmation date SHALL be set only when both claim cells are filled, and a confirmation note SHALL be set only when a confirmation date is set. Deposit is excluded.
 
 #### Scenario: Exact Bills header
 - **WHEN** the first row of the Bills tab is read
-- **THEN** it equals the fifteen header names above, in that order, after trimming surrounding whitespace
+- **THEN** it equals the seventeen header names above, in that order, after trimming surrounding whitespace
 
 #### Scenario: Blank versus zero utility charges
 - **WHEN** a Bills row has a blank water or electricity cell
@@ -45,6 +45,30 @@ The `Bills` tab SHALL expose exactly the header row `room, period, rent, water, 
 #### Scenario: Meter group is optional
 - **WHEN** a Bills row has all six meter cells blank
 - **THEN** the row is valid and the bill shows no meter breakdown
+
+#### Scenario: Confirmation needs a claim
+- **WHEN** a Bills row has a confirmation date but a blank claimed date or a blank account suffix
+- **THEN** the row is invalid and that room's data is unavailable
+
+#### Scenario: Note needs a confirmation date
+- **WHEN** a Bills row has a confirmation note but a blank confirmation date
+- **THEN** the row is invalid and that room's data is unavailable
+
+#### Scenario: Confirmation date follows the claim
+- **WHEN** a Bills row has a confirmation date earlier than its claimed date
+- **THEN** the row is invalid and that room's data is unavailable
+
+#### Scenario: Confirmation date follows payment
+- **WHEN** a Bills row has a confirmation date earlier than its paid date
+- **THEN** the row is invalid and that room's data is unavailable
+
+#### Scenario: Confirmation fields are optional
+- **WHEN** a Bills row has a paid date and blank confirmation fields
+- **THEN** the row is valid and the payment appears in payment history
+
+#### Scenario: Intermediate confirmation is valid
+- **WHEN** a Bills row has both claim cells set, a confirmation date, and a blank paid date
+- **THEN** the row is valid and the claim stays pending until the paid date is set
 
 ### Requirement: Leases tab schema
 
@@ -112,27 +136,31 @@ Before reading any cell, the system SHALL request spreadsheet metadata limited t
 
 ### Requirement: Fixed ranges and header allow-list
 
-The system SHALL read cell data only from the fixed A1 ranges `Bills!A:O`, `Leases!A:D`, and, when present, `Repairs!A:G`, and SHALL validate each first row against the exact header allow-list. It MUST NOT fetch any other tab, column, or range. A claim write SHALL target only `Bills!H:I` on a row inside that range. A repair status write SHALL target only `Repairs!F:G` on a row inside that range.
+The system SHALL read cell data only from the fixed A1 ranges `Bills!A:Q`, `Leases!A:D`, and, when present, `Repairs!A:H`, and SHALL validate each first row against the exact header allow-list. It MUST NOT fetch any other tab, column, or range. A tenant claim write SHALL target only `Bills!H:I`. A claim confirmation SHALL write only `Bills!P:Q` and then `Bills!G` on a row inside the Bills range. A repair status write SHALL target only `Repairs!F:H`. A repair append SHALL target `Repairs!A:H`.
 
 #### Scenario: Only fixed ranges are requested
 - **WHEN** the app reads cell data
-- **THEN** the only ranges in the request are `Bills!A:O`, `Leases!A:D`, and, when the tab exists, `Repairs!A:G`
+- **THEN** the only ranges in the request are `Bills!A:Q`, `Leases!A:D`, and, when the tab exists, `Repairs!A:H`
 
 #### Scenario: Header mismatch
 - **WHEN** a required header is renamed, reordered, duplicated, or missing
 - **THEN** the affected tab is unavailable and no rows from it are interpreted
 
 #### Scenario: Extra column is never fetched
-- **WHEN** the sheet contains data in a column beyond O on Bills, beyond D on Leases, or beyond G on Repairs
+- **WHEN** the sheet contains data in a column beyond Q on Bills, beyond D on Leases, or beyond H on Repairs
 - **THEN** that column is outside the requested range and never reaches the app
 
 #### Scenario: Write stays inside the claim columns
-- **WHEN** a claim is written
+- **WHEN** a tenant writes a claim
 - **THEN** the update range is inside `Bills!H:I` and no other column changes
 
+#### Scenario: Confirmation writes stay inside their columns
+- **WHEN** an admin confirms a claim
+- **THEN** the only update ranges are `Bills!P:Q` and `Bills!G` and no other column changes
+
 #### Scenario: Repair write stays inside the status columns
-- **WHEN** a repair request is marked done
-- **THEN** the update range is inside `Repairs!F:G` and no other column changes
+- **WHEN** a repair request is appended or marked done
+- **THEN** the only update ranges are inside `Repairs!A:H` and no other column changes
 
 #### Scenario: No Repairs range when the tab is absent
 - **WHEN** the `Repairs` tab is absent
@@ -140,7 +168,7 @@ The system SHALL read cell data only from the fixed A1 ranges `Bills!A:O`, `Leas
 
 ### Requirement: Strict Bills validation
 
-Each Bills value SHALL be validated: room A-E after trim and uppercase; period `^\d{4}-(0[1-9]|1[0-2])$`; rent, water, and electricity `^\d{1,7}$` after trim, with blank allowed only for water and electricity; due_date and paid_on `^\d{4}-\d{2}-\d{2}$` real calendar dates; claimed_on blank or a real ISO date; bank_last5 blank or `^\d{5}$`; each utility meter group blank or complete with whole-number readings, an NT$ rate matching `^\d{1,4}(\.\d{1,4})?$` and above zero, an end not below its start, and a rounded cost equal to the amount; no duplicate `(room, period)`. Rows failing any check are invalid.
+Each Bills value SHALL be validated: room A-E after trim and uppercase; period `^\d{4}-(0[1-9]|1[0-2])$`; rent, water, and electricity `^\d{1,7}$` after trim, with blank allowed only for water and electricity; due_date and paid_on `^\d{4}-\d{2}-\d{2}$` real calendar dates; claimed_on blank or a real ISO date; bank_last5 blank or `^\d{5}$`; each utility meter group blank or complete with whole-number readings, an NT$ rate matching `^\d{1,4}(\.\d{1,4})?$` and above zero, an end not below its start, and a rounded cost equal to the amount; confirmed_on blank or a real ISO date not earlier than claimed_on or paid_on when those are set; confirm_note blank or a valid note; confirm_note set only with confirmed_on; confirmed_on set only with both claim cells; no duplicate `(room, period)`. Rows failing any check are invalid.
 
 #### Scenario: Formatted amount rejected
 - **WHEN** a rent or utility cell contains `$1,000`, `1,000`, a negative number, or a currency word
@@ -151,7 +179,7 @@ Each Bills value SHALL be validated: room A-E after trim and uppercase; period `
 - **THEN** the row is invalid and that room's data is unavailable
 
 #### Scenario: Impossible calendar date rejected
-- **WHEN** a due_date, paid_on, or claimed_on cell contains `2026-02-30` or another non-existent date
+- **WHEN** a due_date, paid_on, claimed_on, or confirmed_on cell contains `2026-02-30` or another non-existent date
 - **THEN** the row is invalid and that room's data is unavailable
 
 #### Scenario: Valid leap day accepted
@@ -193,6 +221,26 @@ Each Bills value SHALL be validated: room A-E after trim and uppercase; period `
 #### Scenario: Zero usage with a zero amount accepted
 - **WHEN** a meter group has equal start and end readings, a valid rate, and a matching amount of `0`
 - **THEN** the row is valid and the breakdown shows zero units
+
+#### Scenario: Confirmation without a claim rejected
+- **WHEN** a row has a confirmation date but one or both claim cells are blank
+- **THEN** the row is invalid and that room's data is unavailable
+
+#### Scenario: Confirmation note without a date rejected
+- **WHEN** a row has a confirmation note but a blank confirmation date
+- **THEN** the row is invalid and that room's data is unavailable
+
+#### Scenario: Confirmation date before claim rejected
+- **WHEN** a row has a confirmation date earlier than its claimed date
+- **THEN** the row is invalid and that room's data is unavailable
+
+#### Scenario: Confirmation date before payment rejected
+- **WHEN** a row has a confirmation date earlier than its paid date
+- **THEN** the row is invalid and that room's data is unavailable
+
+#### Scenario: Invalid confirmation note rejected
+- **WHEN** a confirmation note is longer than 200 characters, has a control character, or contains an email, a URL, or seven or more digits in a row
+- **THEN** the row is invalid and that room's data is unavailable
 
 ### Requirement: Bill meter breakdown projection
 
@@ -268,7 +316,7 @@ If any Bills or Leases row attributed to room X is invalid, the system SHALL mak
 
 ### Requirement: Room-scoped server-side projection
 
-The system SHALL expose feed data only through server-only accessors. The tenant accessor SHALL accept a validated room letter, filter rows by exact room on the server before caching or returning, and return a narrow typed projection. The admin claim accessor SHALL accept only an admin session and SHALL return only room, period, claimed_on, and bank_last5 for rows with a claim and no paid_on. No API route, route handler, or Server Action SHALL return full Bill or Lease rows.
+The system SHALL expose feed data only through server-only accessors. The tenant accessor SHALL accept a validated room letter, filter rows by exact room on the server before caching or returning, and return a narrow typed projection that includes the room's latest confirmed claim as a date and optional note. The admin claim accessor SHALL accept only an admin session and SHALL return only room, period, claimed_on, and bank_last5 for rows with a claim and no paid_on. No API route, route handler, or Server Action SHALL return full Bill or Lease rows.
 
 #### Scenario: Room A receives no other room's values
 - **WHEN** a fixture feed contains distinct sentinel values for rooms A-E and room A's feed is requested
@@ -280,15 +328,23 @@ The system SHALL expose feed data only through server-only accessors. The tenant
 
 #### Scenario: Admin claim projection is narrow
 - **WHEN** an admin loads the claim list
-- **THEN** each entry holds only room, period, claimed date, and suffix, and no rent, utility, lease, or paid value
+- **THEN** each entry holds only room, period, claimed date, and suffix, and no rent, utility, lease, paid value, or confirmation value
 
 #### Scenario: No endpoint returns the full feed
 - **WHEN** the app's routes, route handlers, and Server Actions are inspected
 - **THEN** none returns AppFeed rows or a full-sheet snapshot to the client
 
+#### Scenario: Latest confirmation is projected
+- **WHEN** a room has several confirmed bills and more than 12 payments
+- **THEN** the tenant feed holds the latest confirmation by confirmation date, including when that bill is outside the 12-payment cap
+
+#### Scenario: Latest confirmation stays in its room
+- **WHEN** rooms A and B have confirmed claims and room A's feed is requested
+- **THEN** room A's projection holds only room A's latest confirmation and no room B confirmation
+
 ### Requirement: Per-room server caching
 
-The accessor SHALL be cached with `use cache` and keyed by the room letter, with `cacheLife({ stale: 300, revalidate: 900, expire: 3600 })` and tag `appfeed:room:<letter>`. Each cache entry SHALL contain only that room's already-filtered projection; no cache entry may contain another room's rows. A successful claim write SHALL invalidate the tag for that room.
+The accessor SHALL be cached with `use cache` and keyed by the room letter, with `cacheLife({ stale: 300, revalidate: 900, expire: 3600 })` and tag `appfeed:room:<letter>`. Each cache entry SHALL contain only that room's already-filtered projection; no cache entry may contain another room's rows. A successful claim write or claim confirmation SHALL invalidate the tag for that room.
 
 #### Scenario: Cache key is the room
 - **WHEN** room A and room B request their feeds
@@ -304,6 +360,10 @@ The accessor SHALL be cached with `use cache` and keyed by the room letter, with
 
 #### Scenario: Claim write invalidates only its room
 - **WHEN** a claim write succeeds for room A
+- **THEN** the room A tag is invalidated and room B's entry is unchanged
+
+#### Scenario: Confirmation invalidates only its room
+- **WHEN** a claim confirmation succeeds for room A
 - **THEN** the room A tag is invalidated and room B's entry is unchanged
 
 ### Requirement: Freshness and stale data
@@ -352,19 +412,19 @@ The system SHALL map missing configuration, 401, 403, 429, 5xx, network errors, 
 
 ### Requirement: No tenant personal information
 
-The system MUST NOT read, cache, log, or display tenant personal information. AppFeed SHALL exclude names, phone numbers, emails, ID numbers, addresses, LINE IDs, full account numbers, and deposit, except for the short repair note, which SHALL be limited and checked for detectable personal data. The last five digits of a sending account SHALL be the only account data stored. The app MUST NOT reference the main rent file's ID, name, or URL in code, environment configuration, or request URLs.
+The system MUST NOT read, cache, log, or display tenant personal information. AppFeed SHALL exclude names, phone numbers, emails, ID numbers, addresses, LINE IDs, full account numbers, and deposit, except for the short repair note, completion note, and confirmation note, which SHALL be limited and checked for detectable personal data. The last five digits of a sending account SHALL be the only account data stored. The app MUST NOT reference the main rent file's ID, name, or URL in code, environment configuration, or request URLs.
 
 #### Scenario: PII-like value is rejected
 - **WHEN** a name, phone number, email address, ID number, or address is entered in a Bills, Leases, or structured Repairs column
 - **THEN** validation rejects it and the value is not displayed
 
 #### Scenario: Detectable personal data in a note is rejected
-- **WHEN** a repair note contains an email address, a URL, or a run of seven or more digits
+- **WHEN** a repair, completion, or confirmation note contains an email address, a URL, or a run of seven or more digits
 - **THEN** the request is rejected and the note is not written or logged
 
 #### Scenario: Only schema columns are read
 - **WHEN** the app reads AppFeed
-- **THEN** it reads only the fixed ranges and schema columns and never a notes, name, phone, or address column outside the repair note field
+- **THEN** it reads only the fixed ranges and schema columns and never a name, phone, address, or other notes column outside the defined note fields
 
 #### Scenario: Full account number is never stored
 - **WHEN** a tenant tries to report a full bank account number in a claim or repair note
@@ -374,17 +434,21 @@ The system MUST NOT read, cache, log, or display tenant personal information. Ap
 - **WHEN** a repair note is blank, longer than 200 characters, or contains a control character
 - **THEN** the request is rejected and no row is appended
 
+#### Scenario: Completion and confirmation notes are limited
+- **WHEN** a completion or confirmation note is longer than 200 characters, has a control character, or contains an email, a URL, or a long digit run
+- **THEN** the write is rejected and the note is not stored or logged
+
 #### Scenario: Fixtures and logs are clean
 - **WHEN** the test fixtures and runtime logs are inspected
 - **THEN** fixtures are synthetic and logs contain no tenant personal information
 
 ### Requirement: Repairs tab schema
 
-The `Repairs` tab SHALL expose exactly the header row `room, request_id, category, note, submitted_on, status, done_on` in that order. It SHALL hold one row per repair request, with room A-E, a unique 16-character lowercase hex request ID, category `plumbing`, `electrical`, `appliance`, or `other`, a short note, an ISO submitted date, status `pending` or `done`, and a blank or ISO done date. Deposit and free-text personal data are excluded.
+The `Repairs` tab SHALL expose exactly the header row `room, request_id, category, note, submitted_on, status, done_on, done_note` in that order. It SHALL hold one row per repair request, with room A-E, a unique 16-character lowercase hex request ID, category `plumbing`, `electrical`, `appliance`, or `other`, a short note, an ISO submitted date, status `pending` or `done`, a blank or ISO done date, and an optional completion note. A pending row SHALL have a blank completion note. Deposit and free-text personal data are excluded.
 
 #### Scenario: Exact Repairs header
 - **WHEN** the first row of the Repairs tab is read
-- **THEN** it equals the seven header names above, in that order, after trimming surrounding whitespace
+- **THEN** it equals the eight header names above, in that order, after trimming surrounding whitespace
 
 #### Scenario: Valid repair row
 - **WHEN** a Repairs row has room A, a 16-character hex ID, an allowed category, a valid note, an ISO submitted date, and status `pending`
@@ -398,13 +462,21 @@ The `Repairs` tab SHALL expose exactly the header row `room, request_id, categor
 - **WHEN** a Repairs row has status `pending` and a done date, or status `done` and a blank done date
 - **THEN** the row is invalid
 
+#### Scenario: Pending row has no completion note
+- **WHEN** a Repairs row has status `pending` and a completion note
+- **THEN** the row is invalid
+
+#### Scenario: Done row may have a note
+- **WHEN** a Repairs row has status `done`, a done date, and a valid completion note
+- **THEN** the row is valid
+
 #### Scenario: Header-only tab
 - **WHEN** the Repairs tab has only its header row
 - **THEN** the tab is valid and every room's repair history is empty
 
 ### Requirement: Strict Repairs row validation
 
-Each Repairs value SHALL be validated: room A-E after trim and uppercase; request_id `^[0-9a-f]{16}$`; category one of the four allowed values; submitted_on a real ISO date; status `pending` or `done`; done_on blank for `pending` and a real ISO date not earlier than submitted_on for `done`; no duplicate request_id. Rows failing any check are invalid. The note SHALL follow the separate note rule.
+Each Repairs value SHALL be validated: room A-E after trim and uppercase; request_id `^[0-9a-f]{16}$`; category one of the four allowed values; submitted_on a real ISO date; status `pending` or `done`; done_on blank for `pending` and a real ISO date not earlier than submitted_on for `done`; done_note blank for `pending` and blank or a valid note for `done`; no duplicate request_id. Rows failing any check are invalid. The repair note SHALL follow its separate note rule.
 
 #### Scenario: Invalid request ID rejected
 - **WHEN** a request_id is short, long, uppercase, or contains a non-hex character
@@ -433,6 +505,14 @@ Each Repairs value SHALL be validated: room A-E after trim and uppercase; reques
 #### Scenario: Valid leap day accepted
 - **WHEN** submitted_on or done_on contains `2024-02-29`
 - **THEN** the date is accepted as a real calendar date
+
+#### Scenario: Invalid completion note rejected
+- **WHEN** a done_note is longer than 200 characters, has a control character, or contains an email, a URL, or seven or more digits in a row
+- **THEN** the row is invalid
+
+#### Scenario: Pending completion note rejected
+- **WHEN** a pending row has a done_note value
+- **THEN** the row is invalid
 
 ### Requirement: Repair note content rules
 
@@ -472,15 +552,19 @@ A repair note SHALL contain 1 to 200 printable characters after trimming and MUS
 
 ### Requirement: Repair write boundaries
 
-The system SHALL append one complete row to `Repairs` when a tenant submits a request. It SHALL update only `status` and `done_on` of an existing Repairs row when an admin marks it done. A repair write MUST NOT change `room`, `request_id`, `category`, `note`, or `submitted_on`, and MUST NOT create, delete, reorder, or rename tabs or columns.
+The system SHALL append one complete row to `Repairs` when a tenant submits a request. It SHALL update only `status`, `done_on`, and `done_note` of an existing Repairs row when an admin marks it done. A repair write MUST NOT change `room`, `request_id`, `category`, `note`, or `submitted_on`, and MUST NOT create, delete, reorder, or rename tabs or columns.
 
 #### Scenario: Submit appends one row
 - **WHEN** a valid repair request is accepted
-- **THEN** the `Repairs` tab gains one row with all seven cells and status `pending`
+- **THEN** the `Repairs` tab gains one row with all eight cells, status `pending`, and a blank completion note
 
 #### Scenario: Status write changes two cells
-- **WHEN** an admin marks a request done
+- **WHEN** an admin marks a request done without a note
 - **THEN** only `status` and `done_on` change on that row
+
+#### Scenario: Completion note is written
+- **WHEN** an admin marks a request done with a note
+- **THEN** `status`, `done_on`, and `done_note` change on that row
 
 #### Scenario: No other cell changes
 - **WHEN** a repair submission or completion is written
@@ -496,7 +580,7 @@ The system SHALL append one complete row to `Repairs` when a tenant submits a re
 
 #### Scenario: Status write failure leaves both cells unchanged
 - **WHEN** the status update call fails
-- **THEN** both `status` and `done_on` keep their previous values
+- **THEN** `status` and `done_on` keep their previous values, and `done_note` is not written
 
 ### Requirement: Repair fail-closed behavior
 
@@ -524,7 +608,7 @@ An invalid Repairs row attributed to room X SHALL make only room X's repair hist
 
 ### Requirement: Repair projection is narrow and server-only
 
-The system SHALL expose repair data only through server-only accessors. A tenant accessor SHALL accept a validated room letter and return only that room's `request_id`, `category`, `note`, `submitted_on`, `status`, and `done_on`. The admin accessor SHALL accept only an admin session and return only room, `request_id`, `category`, `note`, and `submitted_on` for pending requests. No route, route handler, or Server Action SHALL return full Repair rows.
+The system SHALL expose repair data only through server-only accessors. A tenant accessor SHALL accept a validated room letter and return only that room's `request_id`, `category`, `note`, `submitted_on`, `status`, `done_on`, and the latest completion as a date and optional note. The admin accessor SHALL accept only an admin session and return only room, `request_id`, `category`, `note`, and `submitted_on` for pending requests. No route, route handler, or Server Action SHALL return full Repair rows.
 
 #### Scenario: Room A receives no other room's repairs
 - **WHEN** a fixture feed contains distinct repair values for rooms A-E and room A's repairs are requested
@@ -532,7 +616,7 @@ The system SHALL expose repair data only through server-only accessors. A tenant
 
 #### Scenario: Admin repair projection is narrow
 - **WHEN** an admin loads the pending repair list
-- **THEN** each entry holds only room, request ID, category, note, and submitted date, and no done date or other sheet value
+- **THEN** each entry holds only room, request ID, category, note, and submitted date, and no done date, completion note, or other sheet value
 
 #### Scenario: Tenant cannot call the admin accessor
 - **WHEN** a tenant session or anonymous request asks for the pending repair list
@@ -541,6 +625,14 @@ The system SHALL expose repair data only through server-only accessors. A tenant
 #### Scenario: No endpoint returns full repair rows
 - **WHEN** the app's routes, route handlers, and Server Actions are inspected
 - **THEN** none returns full `Repairs` rows or a full-sheet snapshot to the client
+
+#### Scenario: Latest completion is projected
+- **WHEN** a room has more than 20 repairs and its latest done repair is outside the 20-item history
+- **THEN** the tenant repair result holds that latest completion date and note
+
+#### Scenario: Latest completion stays in its room
+- **WHEN** rooms A and B have done repairs and room A's repairs are requested
+- **THEN** room A's result holds only room A's latest completion and no room B completion
 
 ### Requirement: Repair cache is room-scoped
 
@@ -565,3 +657,27 @@ The repair accessor SHALL be cached with `use cache` and keyed by the room lette
 #### Scenario: Missing tab is not cached as empty
 - **WHEN** the `Repairs` tab is absent
 - **THEN** the repair section shows unavailable on every load and does not show an empty history
+
+### Requirement: Claim confirmation write boundaries
+
+The system SHALL write a claim confirmation to only `Bills!P:Q` and `Bills!G` of an existing row. It SHALL write the confirmation date and note first, then the paid date. A failed second write SHALL leave the claim pending. A confirmation write MUST NOT create, delete, or reorder rows, tabs, or columns.
+
+#### Scenario: Confirmation writes in safe order
+- **WHEN** the app confirms a pending claim
+- **THEN** it first writes `Bills!P:Q` with the confirmation date and note, then writes `Bills!G` with the paid date
+
+#### Scenario: First write failure changes nothing
+- **WHEN** the `Bills!P:Q` write fails
+- **THEN** the paid date, confirmation date, and note keep their previous values
+
+#### Scenario: Second write failure keeps the claim pending
+- **WHEN** the `Bills!P:Q` write succeeds and the `Bills!G` write fails
+- **THEN** the paid date stays blank, the claim stays in the pending list, and the tenant line shows no confirmation
+
+#### Scenario: Retry overwrites the hidden confirmation
+- **WHEN** an admin retries a confirmation after a second-write failure
+- **THEN** the app overwrites `Bills!P:Q` and writes `Bills!G` on the same row
+
+#### Scenario: No structural write
+- **WHEN** a confirmation write request is inspected
+- **THEN** it does not create a tab, add a row, delete a row, or change a header

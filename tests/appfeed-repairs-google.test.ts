@@ -165,7 +165,7 @@ describe("optional Repairs tab", () => {
 
     const valuesUrl = new URL(fetchMock.mock.calls[2][0] as string);
     expect(valuesUrl.searchParams.getAll("ranges")).toEqual([
-      "Bills!A:O",
+      "Bills!A:Q",
       "Leases!A:D",
     ]);
   });
@@ -180,7 +180,7 @@ describe("optional Repairs tab", () => {
     expect(result.kind).toBe("ok");
     const valuesUrl = new URL(fetchMock.mock.calls[2][0] as string);
     expect(valuesUrl.searchParams.getAll("ranges")).toEqual([
-      "Bills!A:O",
+      "Bills!A:Q",
       "Leases!A:D",
     ]);
   });
@@ -299,7 +299,7 @@ describe("repair writes", () => {
 
     const [url, init] = fetchMock.mock.calls[1];
     expect(url).toBe(
-      `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Repairs!A:G:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Repairs!A:H:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     );
     expect(init).toMatchObject({
       method: "POST",
@@ -319,6 +319,7 @@ describe("repair writes", () => {
           "Leaking tap",
           "2026-10-30",
           "pending",
+          "",
           "",
         ],
       ],
@@ -383,12 +384,12 @@ describe("repair writes", () => {
     });
   });
 
-  it("writes only the status and done date with PUT", async () => {
+  it("writes the status, done date, and blank note with PUT", async () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({ access_token: "token-123", expires_in: 3600 }),
       )
-      .mockResolvedValueOnce(jsonResponse({ updatedRange: "Repairs!F5:G5" }));
+      .mockResolvedValueOnce(jsonResponse({ updatedRange: "Repairs!F5:H5" }));
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const { writeRepairDone } = await loadClient();
@@ -399,7 +400,7 @@ describe("repair writes", () => {
 
     const [url, init] = fetchMock.mock.calls[1];
     expect(url).toBe(
-      `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Repairs!F5:G5?valueInputOption=RAW`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Repairs!F5:H5?valueInputOption=RAW`,
     );
     expect(init).toMatchObject({
       method: "PUT",
@@ -407,7 +408,7 @@ describe("repair writes", () => {
       cache: "no-store",
     });
     expect(JSON.parse(init.body as string)).toEqual({
-      values: [["done", "2026-11-01"]],
+      values: [["done", "2026-11-01", ""]],
     });
     expect(
       fetchMock.mock.calls.some(([callUrl]) =>
@@ -416,21 +417,42 @@ describe("repair writes", () => {
     ).toBe(false);
   });
 
-  it.each([
-    ["row 1", 1, "2026-11-01"],
-    ["a non-integer row", 2.5, "2026-11-01"],
-    ["an impossible date", 2, "2026-02-30"],
-  ])("rejects %s before touching the network", async (_label, row, date) => {
-    const { writeRepairDone } = await loadClient();
-    const result = await writeRepairDone(row, date);
+  it("writes a trimmed completion note", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ access_token: "token-123", expires_in: 3600 }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ updatedRange: "Repairs!F5:H5" }));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    expect(result).toEqual({
-      kind: "unavailable",
-      reason: "server",
-      transient: false,
+    const { writeRepairDone } = await loadClient();
+    const result = await writeRepairDone(5, "2026-11-01", "  Fixed the tap  ");
+
+    expect(result).toEqual({ kind: "ok" });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toEqual({
+      values: [["done", "2026-11-01", "Fixed the tap"]],
     });
-    expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["row 1", 1, "2026-11-01", ""],
+    ["a non-integer row", 2.5, "2026-11-01", ""],
+    ["an impossible date", 2, "2026-02-30", ""],
+    ["an invalid note", 2, "2026-11-01", "Contact jane@example.com"],
+  ])(
+    "rejects %s before touching the network",
+    async (_label, row, date, note) => {
+      const { writeRepairDone } = await loadClient();
+      const result = await writeRepairDone(row, date, note);
+
+      expect(result).toEqual({
+        kind: "unavailable",
+        reason: "server",
+        transient: false,
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     [401, "auth", false],
