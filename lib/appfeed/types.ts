@@ -1,5 +1,10 @@
 import type { RoomLetter } from "../rooms";
 
+export type BillClaim = {
+  claimedOn: string;
+  bankLast5: string;
+};
+
 export type FeedBill = {
   period: string;
   rent: number;
@@ -7,6 +12,14 @@ export type FeedBill = {
   electricity: number | null;
   total: number;
   dueDate: string;
+  claim: BillClaim | null;
+};
+
+export type PendingClaim = {
+  room: RoomLetter;
+  period: string;
+  claimedOn: string;
+  bankLast5: string;
 };
 
 export type FeedPayment = {

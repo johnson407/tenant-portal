@@ -62,6 +62,22 @@ const en: Dictionary = {
       bankCode: "Bank code",
       accountNo: "Account number",
     },
+    claim: {
+      dateLabel: "Transfer date",
+      suffixLabel: "Last 5 digits of your account",
+      suffixHint:
+        "Enter the last 5 digits only. Do not enter the full account number.",
+      submit: "Report payment",
+      submitting: "Sending...",
+      success: "Payment reported. The landlord will confirm it.",
+      reportedTemplate: "Payment reported on {date}. The landlord will confirm it.",
+      maskedTemplate: "Account ending {masked}",
+      errors: {
+        date: "Enter a valid date that is not in the future.",
+        suffix: "Enter exactly 5 digits.",
+        generic: "Could not report the payment. Try again.",
+      },
+    },
   },
   denied: {
     heading: "Not authorized",
@@ -119,6 +135,15 @@ const en: Dictionary = {
         invalid: "Check the bank details and try again.",
         generic: "Could not save the bank account. Try again.",
       },
+    },
+    claims: {
+      sectionHeading: "Pending payment claims",
+      empty: "No pending payment claims.",
+      unavailable: "Payment claims are temporarily unavailable. Try again later.",
+      room: "Room",
+      period: "Period",
+      claimedOn: "Reported on",
+      bankLast5: "Last 5 digits",
     },
   },
 };

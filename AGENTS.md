@@ -10,7 +10,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Tenant Portal
 
-Next.js 16 App Router app: rooms A–E sign in with a 4–64 character alphanumeric password and see their own room's bills, payments, and lease dates from the PII-free `AppFeed` Google Sheet; an admin resets room codes. The UI is locale-prefixed (`zh-TW` by default, `en` optional). No database and no tenant PII.
+Next.js 16 App Router app: rooms A–E sign in with a 4–64 character alphanumeric password and see their own room's bills, payments, and lease dates from the PII-free `AppFeed` Google Sheet; a tenant can report a payment claim on an open bill; an admin resets room codes and reviews pending claims. The UI is locale-prefixed (`zh-TW` by default, `en` optional). No database and no tenant PII.
+
+## Writing style
+
+- Write all prose in ASD-STE100 Simplified Technical English: short sentences, one idea per sentence, active voice, approved vocabulary, no idioms or slang.
+- Follow Zinsser's four principles: simplicity, brevity, clarity, humanity. Cut clutter, prefer the plain word, and write to the reader as a person.
+- Apply this to docs, comments, commit messages, UI copy, and your replies.
 
 ## Commands
 
@@ -42,7 +48,7 @@ Next.js 16 App Router app: rooms A–E sign in with a 4–64 character alphanume
 - An admin code reset bumps `room:<letter>:session-version`, invalidating that room's existing sessions. Logout deliberately does not bump it; logout is browser-local.
 - Redis also holds rate-limit counters with escalating lockouts. If Redis is unavailable, fail with a generic error rather than bypassing the check.
 - Server Actions live in `app/**/actions.ts` and are POST-only. Forms needing pending/error state use client components with `useActionState`; logout uses plain server-rendered forms.
-- Dashboard data comes only from the PII-free `AppFeed` Google Sheet through `lib/appfeed/`: `google.ts` guards the title/tabs and reads fixed ranges, `validate.ts` validates and projects one room, and `feed.ts` caches the room-scoped result. See `docs/appfeed-rules.md` for the human sheet checklist.
+- Dashboard data comes only from the PII-free `AppFeed` Google Sheet through `lib/appfeed/`: `google.ts` guards the title/tabs, reads fixed ranges, and writes claim cells, `validate.ts` validates and projects one room, `feed.ts` caches the room-scoped result, and `claims.ts` validates and stores tenant payment claims. The service account needs the `spreadsheets` scope and **Editor** access to `AppFeed`, but the app writes only `Bills!H:I` of an existing row. See `docs/appfeed-rules.md` for the human sheet checklist and the deploy order.
 - The landlord's main rent file, any copy of it, and its name/ID/URL must never appear in code, env, logs, fixtures, or URLs, and it must never be shared with the service account. Never add tenant names, phone numbers, emails, IDs, addresses, or plaintext codes anywhere.
 - `next.config.ts` enables `cacheComponents` and `partialPrefetching`; protected pages set `export const instant = false`.
 

@@ -2,6 +2,13 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import type { AppFeedSnapshot } from "@/lib/appfeed/types";
+import {
+  BILLS_HEADER,
+  LEASES_HEADER,
+  buildPendingClaims,
+  buildRoomFeed,
+} from "@/lib/appfeed/validate";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 
@@ -141,5 +148,95 @@ describe("synthetic AppFeed fixtures", () => {
         true,
       );
     }
+  });
+});
+
+describe("payment claim boundaries", () => {
+  const CLAIM_SENTINEL = "98765";
+  const CLAIMED_ON = "2026-10-30";
+
+  function claimSnapshot(bankLast5 = CLAIM_SENTINEL): AppFeedSnapshot {
+    return {
+      bills: [
+        [...BILLS_HEADER],
+        ["a", "2026-11", 10000, "", "", "2026-11-05", "", CLAIMED_ON, bankLast5],
+        ["b", "2026-11", 20000, "", "", "2026-11-05", "", "", ""],
+      ],
+      leases: [
+        [...LEASES_HEADER],
+        ["a", "2026-01-01", "2026-12-31", ""],
+        ["b", "2026-01-01", "2026-12-31", ""],
+      ],
+    };
+  }
+
+  it("keeps a room A claim out of room B's feed result", () => {
+    const snapshot = claimSnapshot();
+
+    const a = buildRoomFeed(snapshot, "a", "2026-11-01T00:00:00.000Z");
+    const b = buildRoomFeed(snapshot, "b", "2026-11-01T00:00:00.000Z");
+
+    expect(a.kind).toBe("ok");
+    expect(b.kind).toBe("ok");
+    if (a.kind !== "ok" || b.kind !== "ok") return;
+
+    expect(JSON.stringify(a)).toContain(CLAIM_SENTINEL);
+    expect(JSON.stringify(a)).toContain(CLAIMED_ON);
+    expect(JSON.stringify(b)).not.toContain(CLAIM_SENTINEL);
+    expect(JSON.stringify(b)).not.toContain(CLAIMED_ON);
+    expect(b.feed.openBills[0].claim).toBeNull();
+  });
+
+  it("projects a pending claim to the admin list only", () => {
+    const claims = buildPendingClaims(claimSnapshot());
+
+    expect(claims).toEqual([
+      {
+        room: "a",
+        period: "2026-11",
+        claimedOn: CLAIMED_ON,
+        bankLast5: CLAIM_SENTINEL,
+      },
+    ]);
+  });
+
+  it("rejects a full account number in the suffix column", () => {
+    const snapshot = claimSnapshot("1234567890123");
+
+    expect(buildRoomFeed(snapshot, "a", "2026-11-01T00:00:00.000Z")).toEqual({
+      kind: "unavailable",
+    });
+    expect(buildPendingClaims(snapshot)).toEqual([]);
+    expect(buildRoomFeed(snapshot, "b", "2026-11-01T00:00:00.000Z").kind).toBe(
+      "ok",
+    );
+  });
+
+  it("keeps claim values out of warnings and page metadata", () => {
+    const claimsSource = read(join(repoRoot, "lib/appfeed/claims.ts"));
+    const warnings = claimsSource.match(/console\.warn\([\s\S]*?\);/g) ?? [];
+
+    expect(warnings.length).toBeGreaterThan(0);
+    for (const warning of warnings) {
+      expect(warning).not.toContain("bankLast5");
+      expect(warning).not.toContain("claimedOn");
+    }
+
+    const roomPage = read(
+      join(repoRoot, "app/[lang]/rooms/[room]/page.tsx"),
+    );
+    const metadata = roomPage.slice(
+      roomPage.indexOf("export async function generateMetadata"),
+      roomPage.indexOf("export default async function RoomPage"),
+    );
+    expect(metadata).not.toContain("bankLast5");
+    expect(metadata).not.toContain("claimedOn");
+  });
+
+  it("uses a per-room cache tag and never a shared claim cache entry", () => {
+    const feedSource = read(join(repoRoot, "lib/appfeed/feed.ts"));
+
+    expect(feedSource).toContain("appfeed:room:${room}");
+    expect(feedSource).not.toMatch(/appfeed:(?:claims|pending)/);
   });
 });

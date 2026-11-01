@@ -5,6 +5,7 @@ import type {
   FeedLease,
   FeedPayment,
   FeedResult,
+  PendingClaim,
 } from "./types";
 
 export const BILLS_HEADER = [
@@ -15,6 +16,8 @@ export const BILLS_HEADER = [
   "electricity",
   "due_date",
   "paid_on",
+  "claimed_on",
+  "bank_last5",
 ] as const;
 
 export const LEASES_HEADER = [
@@ -27,12 +30,13 @@ export const LEASES_HEADER = [
 export const PERIOD_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 export const AMOUNT_PATTERN = /^\d{1,7}$/;
 export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+export const BANK_LAST5_PATTERN = /^\d{5}$/;
 
 export type ParsedAmount =
   | { ok: true; value: number | null }
   | { ok: false };
 
-type BillRow = {
+export type BillRow = {
   room: RoomLetter;
   period: string;
   rent: number;
@@ -40,6 +44,8 @@ type BillRow = {
   electricity: number | null;
   dueDate: string;
   paidOn: string | null;
+  claimedOn: string | null;
+  bankLast5: string | null;
 };
 
 type LeaseRow = {
@@ -73,6 +79,56 @@ function isBlankRow(row: unknown[]): boolean {
 
 function padRow(row: unknown[], length: number): unknown[] {
   return Array.from({ length }, (_, index) => row[index]);
+}
+
+/**
+ * Parses one padded Bills row. Returns null when any cell fails a rule for that
+ * row. The claim pair must be both blank or both set; a partial pair is invalid.
+ */
+function parseBillRow(row: unknown[]): BillRow | null {
+  const room = parseRoomCell(row[0]);
+  if (!room) return null;
+
+  const period = cellText(row[1]);
+  const rent = parseWholeTwd(row[2]);
+  const water = parseWholeTwd(row[3], true);
+  const electricity = parseWholeTwd(row[4], true);
+  const dueDate = cellText(row[5]);
+  const paidOnText = cellText(row[6]);
+  const claimedOnText = cellText(row[7]);
+  const bankLast5Text = cellText(row[8]);
+
+  const paidOn = paidOnText === "" ? null : paidOnText;
+  const claimedOn = claimedOnText === "" ? null : claimedOnText;
+  const bankLast5 = bankLast5Text === "" ? null : bankLast5Text;
+
+  if (
+    !PERIOD_PATTERN.test(period) ||
+    !isRealIsoDate(dueDate) ||
+    (paidOn !== null && !isRealIsoDate(paidOn))
+  ) {
+    return null;
+  }
+
+  if (!rent.ok || rent.value === null || !water.ok || !electricity.ok) {
+    return null;
+  }
+
+  if ((claimedOn === null) !== (bankLast5 === null)) return null;
+  if (claimedOn !== null && !isRealIsoDate(claimedOn)) return null;
+  if (bankLast5 !== null && !BANK_LAST5_PATTERN.test(bankLast5)) return null;
+
+  return {
+    room,
+    period,
+    rent: rent.value,
+    water: water.value,
+    electricity: electricity.value,
+    dueDate,
+    paidOn,
+    claimedOn,
+    bankLast5,
+  };
 }
 
 export function hasExactHeader(
@@ -180,44 +236,20 @@ function validateSnapshot(snapshot: AppFeedSnapshot): Validation {
       continue;
     }
 
-    const period = cellText(row[1]);
-    const rent = parseWholeTwd(row[2]);
-    const water = parseWholeTwd(row[3], true);
-    const electricity = parseWholeTwd(row[4], true);
-    const dueDate = cellText(row[5]);
-    const paidOnText = cellText(row[6]);
-    const paidOn = paidOnText === "" ? null : paidOnText;
-
-    if (
-      !PERIOD_PATTERN.test(period) ||
-      !isRealIsoDate(dueDate) ||
-      (paidOn !== null && !isRealIsoDate(paidOn))
-    ) {
+    const bill = parseBillRow(row);
+    if (!bill) {
       markRoomInvalid(invalidRooms, room, "bills");
       continue;
     }
 
-    if (!rent.ok || rent.value === null || !water.ok || !electricity.ok) {
-      markRoomInvalid(invalidRooms, room, "bills");
-      continue;
-    }
-
-    const key = `${room}:${period}`;
+    const key = `${bill.room}:${bill.period}`;
     if (billKeys.has(key)) {
       markRoomInvalid(invalidRooms, room, "bills");
       continue;
     }
     billKeys.add(key);
 
-    bills.push({
-      room,
-      period,
-      rent: rent.value,
-      water: water.value,
-      electricity: electricity.value,
-      dueDate,
-      paidOn,
-    });
+    bills.push(bill);
   }
 
   for (let index = 1; index < snapshot.leases.length; index += 1) {
@@ -281,6 +313,10 @@ function toFeedBill(bill: BillRow): FeedBill {
     electricity: bill.electricity,
     total: bill.rent + (bill.water ?? 0) + (bill.electricity ?? 0),
     dueDate: bill.dueDate,
+    claim:
+      bill.claimedOn !== null && bill.bankLast5 !== null
+        ? { claimedOn: bill.claimedOn, bankLast5: bill.bankLast5 }
+        : null,
   };
 }
 
@@ -290,6 +326,89 @@ function toFeedPayment(bill: BillRow & { paidOn: string }): FeedPayment {
     amount: bill.rent + (bill.water ?? 0) + (bill.electricity ?? 0),
     receivedOn: bill.paidOn,
   };
+}
+
+/**
+ * Finds one exact room and period row. Returns the sheet row number so a claim
+ * can write to `Bills!H{row}:I{row}`. A paid bill is returned as-is; the caller
+ * decides whether it may change.
+ */
+export type BillRowLookup =
+  | { ok: true; rowNumber: number; bill: BillRow }
+  | {
+      ok: false;
+      reason: "headers" | "duplicate" | "unknown-period" | "invalid";
+    };
+
+export function findBillRow(
+  snapshot: AppFeedSnapshot,
+  room: RoomLetter,
+  period: string,
+): BillRowLookup {
+  if (
+    !Array.isArray(snapshot.bills) ||
+    !hasExactHeader(snapshot.bills[0], BILLS_HEADER)
+  ) {
+    return { ok: false, reason: "headers" };
+  }
+  if (!isRoomLetter(room) || !PERIOD_PATTERN.test(period)) {
+    return { ok: false, reason: "unknown-period" };
+  }
+
+  let found: { rowNumber: number; bill: BillRow } | null = null;
+
+  for (let index = 1; index < snapshot.bills.length; index += 1) {
+    const rawRow = snapshot.bills[index];
+    if (!Array.isArray(rawRow) || rawRow.length > BILLS_HEADER.length) {
+      return { ok: false, reason: "invalid" };
+    }
+    if (isBlankRow(rawRow)) continue;
+
+    const row = padRow(rawRow, BILLS_HEADER.length);
+    if (parseRoomCell(row[0]) !== room) continue;
+    if (cellText(row[1]) !== period) continue;
+
+    const bill = parseBillRow(row);
+    if (!bill) return { ok: false, reason: "invalid" };
+    if (found) return { ok: false, reason: "duplicate" };
+    found = { rowNumber: index + 1, bill };
+  }
+
+  return found
+    ? { ok: true, rowNumber: found.rowNumber, bill: found.bill }
+    : { ok: false, reason: "unknown-period" };
+}
+
+/**
+ * Projects pending claims across rooms for the admin list. Only rows with both
+ * claim cells and no `paid_on` are included. Returns null when the sheet shape
+ * is invalid.
+ */
+export function buildPendingClaims(
+  snapshot: AppFeedSnapshot,
+): PendingClaim[] | null {
+  const validation = validateSnapshot(snapshot);
+  if (!validation.ok) return null;
+
+  return validation.bills
+    .filter(
+      (
+        bill,
+      ): bill is BillRow & { claimedOn: string; bankLast5: string } =>
+        bill.paidOn === null &&
+        bill.claimedOn !== null &&
+        bill.bankLast5 !== null,
+    )
+    .map((bill) => ({
+      room: bill.room,
+      period: bill.period,
+      claimedOn: bill.claimedOn,
+      bankLast5: bill.bankLast5,
+    }))
+    .sort(
+      (a, b) =>
+        a.room.localeCompare(b.room) || a.period.localeCompare(b.period),
+    );
 }
 
 /**

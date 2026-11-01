@@ -60,6 +60,21 @@ export type Dictionary = {
       bankCode: string;
       accountNo: string;
     };
+    claim: {
+      dateLabel: string;
+      suffixLabel: string;
+      suffixHint: string;
+      submit: string;
+      submitting: string;
+      success: string;
+      reportedTemplate: string;
+      maskedTemplate: string;
+      errors: {
+        date: string;
+        suffix: string;
+        generic: string;
+      };
+    };
   };
   denied: {
     heading: string;
@@ -115,6 +130,15 @@ export type Dictionary = {
         invalid: string;
         generic: string;
       };
+    };
+    claims: {
+      sectionHeading: string;
+      empty: string;
+      unavailable: string;
+      room: string;
+      period: string;
+      claimedOn: string;
+      bankLast5: string;
     };
   };
 };

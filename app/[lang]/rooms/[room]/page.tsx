@@ -11,6 +11,8 @@ import { formatDate, formatDateTime, formatTwd } from "@/lib/i18n/format";
 import { getSessionClaims } from "@/lib/session-cookies";
 import { getRoomSessionVersion } from "@/lib/session-version";
 import { ROOM_UPPER, parseRoomLetter } from "@/lib/rooms";
+import { maskBankLast5 } from "@/lib/mask";
+import ClaimForm from "./claim-form";
 
 export const instant = false;
 
@@ -226,6 +228,29 @@ export default async function RoomPage({ params }: RoomPageProps) {
                         ),
                       )}
                     </dl>
+                    {bill.claim === null ? null : (
+                      <div className="mt-3 border-t border-slate-800 pt-3">
+                        <p className="rounded-md border border-dashed border-amber-800 bg-amber-950/40 p-3 text-sm text-amber-200">
+                          {dictionary.room.claim.reportedTemplate.replace(
+                            "{date}",
+                            formatDate(bill.claim.claimedOn, lang),
+                          )}
+                        </p>
+                        <p className="mt-2 font-mono text-xs text-slate-300">
+                          {dictionary.room.claim.maskedTemplate.replace(
+                            "{masked}",
+                            maskBankLast5(bill.claim.bankLast5),
+                          )}
+                        </p>
+                      </div>
+                    )}
+                    <ClaimForm
+                      locale={lang}
+                      room={room}
+                      period={bill.period}
+                      labels={dictionary.room.claim}
+                      defaultDate={bill.claim?.claimedOn}
+                    />
                   </li>
                 ))}
               </ul>

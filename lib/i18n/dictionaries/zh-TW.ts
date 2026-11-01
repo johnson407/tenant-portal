@@ -62,6 +62,21 @@ const zhTW: Dictionary = {
       bankCode: "銀行代號",
       accountNo: "帳號",
     },
+    claim: {
+      dateLabel: "轉帳日期",
+      suffixLabel: "您的帳號末 5 碼",
+      suffixHint: "請只輸入最後 5 碼，不要輸入完整帳號。",
+      submit: "回報付款",
+      submitting: "送出中...",
+      success: "已回報付款，房東將盡快確認。",
+      reportedTemplate: "已於 {date} 回報付款，等待房東確認。",
+      maskedTemplate: "帳號末碼 {masked}",
+      errors: {
+        date: "請輸入有效且不是未來的日期。",
+        suffix: "請輸入正好 5 位數字。",
+        generic: "無法回報付款，請再試一次。",
+      },
+    },
   },
   denied: {
     heading: "未獲授權",
@@ -117,6 +132,15 @@ const zhTW: Dictionary = {
         invalid: "請確認銀行資料後再試。",
         generic: "無法儲存銀行帳戶，請再試一次。",
       },
+    },
+    claims: {
+      sectionHeading: "待確認的付款回報",
+      empty: "目前沒有待確認的付款回報。",
+      unavailable: "付款回報資料暫時無法取得，請稍後再試。",
+      room: "房間",
+      period: "期別",
+      claimedOn: "回報日期",
+      bankLast5: "帳號末 5 碼",
     },
   },
 };

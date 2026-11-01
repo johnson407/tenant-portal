@@ -45,10 +45,10 @@ function valuesResponse(
   return jsonResponse({
     valueRanges: [
       {
-        range: "Bills!A1:G2",
+        range: "Bills!A1:I2",
         values: [
           [...billsHeader],
-          ["a", "2026-10", 750, "", "", "2026-11-01", ""],
+          ["a", "2026-10", 750, "", "", "2026-11-01", "", "", ""],
         ],
       },
       {
@@ -123,7 +123,7 @@ describe("service-account token", () => {
     const claims = decodeJwt(assertion!);
     expect(claims).toMatchObject({
       iss: SERVICE_EMAIL,
-      scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
+      scope: "https://www.googleapis.com/auth/spreadsheets",
       aud: "https://oauth2.googleapis.com/token",
     });
     expect(Number(claims.exp) - Number(claims.iat)).toBe(3600);
@@ -194,7 +194,7 @@ describe("wrong-file and header guards", () => {
     const valuesUrl = new URL(fetchMock.mock.calls[2][0] as string);
     expect(valuesUrl.pathname).toContain(`/spreadsheets/${SHEET_ID}/values:batchGet`);
     expect(valuesUrl.searchParams.getAll("ranges")).toEqual([
-      "Bills!A:G",
+      "Bills!A:I",
       "Leases!A:D",
     ]);
     expect(valuesUrl.searchParams.get("majorDimension")).toBe("ROWS");
@@ -287,7 +287,7 @@ describe("wrong-file and header guards", () => {
         jsonResponse({
           valueRanges: [
             { range: "Leases!A1:D1", values: [[...LEASES_HEADER]] },
-            { range: "Bills!A1:G1", values: [[...BILLS_HEADER]] },
+            { range: "Bills!A1:I1", values: [[...BILLS_HEADER]] },
           ],
         }),
       );
@@ -421,5 +421,103 @@ describe("failure mapping", () => {
 
     expect(JSON.stringify(result)).not.toContain(SHEET_ID);
     expect(JSON.stringify(warn.mock.calls)).not.toContain(SHEET_ID);
+  });
+});
+
+describe("claim cell write", () => {
+  it("writes both cells with PUT and never calls batchUpdate", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ access_token: "token-123", expires_in: 3600 }))
+      .mockResolvedValueOnce(jsonResponse({ updatedRange: "Bills!H4:I4" }));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { writeClaimCells } = await loadClient();
+    const result = await writeClaimCells(4, {
+      claimedOn: "2026-10-28",
+      bankLast5: "01234",
+    });
+
+    expect(result).toEqual({ kind: "ok" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const [url, init] = fetchMock.mock.calls[1];
+    expect(url).toBe(
+      `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Bills!H4:I4?valueInputOption=RAW`,
+    );
+    expect(init).toMatchObject({
+      method: "PUT",
+      redirect: "error",
+      cache: "no-store",
+    });
+    expect(init.headers).toMatchObject({
+      authorization: "Bearer token-123",
+      "content-type": "application/json",
+    });
+    expect(JSON.parse(init.body as string)).toEqual({
+      values: [["2026-10-28", "01234"]],
+    });
+    expect(
+      fetchMock.mock.calls.some(([callUrl]) =>
+        String(callUrl).includes(":batchUpdate"),
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    [403, "auth", false],
+    [400, "server", false],
+    [500, "server", true],
+  ])("maps a write HTTP %i to %s", async (status, reason, transient) => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ access_token: "token-123", expires_in: 3600 }))
+      .mockResolvedValueOnce(jsonResponse({ error: "nope" }, Number(status)));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { writeClaimCells } = await loadClient();
+    const result = await writeClaimCells(2, {
+      claimedOn: "2026-10-28",
+      bankLast5: "01234",
+    });
+
+    expect(result).toEqual({ kind: "unavailable", reason, transient });
+  });
+
+  it("maps a write timeout to a transient timeout", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ access_token: "token-123", expires_in: 3600 }))
+      .mockRejectedValueOnce(
+        Object.assign(new Error("timed out"), { name: "TimeoutError" }),
+      );
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { writeClaimCells } = await loadClient();
+    const result = await writeClaimCells(2, {
+      claimedOn: "2026-10-28",
+      bankLast5: "01234",
+    });
+
+    expect(result).toEqual({
+      kind: "unavailable",
+      reason: "timeout",
+      transient: true,
+    });
+  });
+
+  it("returns config without touching the network when credentials are missing", async () => {
+    vi.stubEnv("APPFEED_SPREADSHEET_ID", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { writeClaimCells } = await loadClient();
+    const result = await writeClaimCells(2, {
+      claimedOn: "2026-10-28",
+      bankLast5: "01234",
+    });
+
+    expect(result).toEqual({
+      kind: "unavailable",
+      reason: "config",
+      transient: false,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

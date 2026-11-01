@@ -9,10 +9,10 @@ import { BILLS_HEADER, LEASES_HEADER, hasExactHeaderRow } from "./validate";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
-const SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
+const SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 const JWT_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 const EXPECTED_TITLE = "AppFeed";
-const BILLS_RANGE = "Bills!A:G";
+const BILLS_RANGE = "Bills!A:I";
 const LEASES_RANGE = "Leases!A:D";
 const TIMEOUT_MS = 8000;
 const TOKEN_EXPIRY_SKEW_MS = 60_000;
@@ -41,6 +41,7 @@ function statusFailure(status: number): SnapshotFailure {
   if (status === 401 || status === 403) return failure("auth");
   if (status === 429) return failure("quota", true);
   if (status >= 500) return failure("server", true);
+  if (status === 400) return failure("server");
   return failure("auth");
 }
 
@@ -262,6 +263,61 @@ async function fetchValues(
       leases: leases as unknown[][],
     },
   };
+}
+
+/**
+ * Writes the two claim cells for one existing bill row. Uses RAW input so
+ * Sheets keeps the date as text and never evaluates the suffix. Only columns
+ * H and I change; no structure call is made.
+ */
+export async function writeClaimCells(
+  rowNumber: number,
+  claim: { claimedOn: string; bankLast5: string },
+): Promise<{ kind: "ok" } | SnapshotFailure> {
+  if (!Number.isSafeInteger(rowNumber) || rowNumber < 2) {
+    return failure("server");
+  }
+
+  const credentials = readCredentials();
+  if (!credentials) return failure("config");
+
+  const signal = AbortSignal.timeout(TIMEOUT_MS);
+  const token = await getAccessToken(credentials, signal);
+  if (token.kind === "unavailable") return token;
+
+  const range = `Bills!H${rowNumber}:I${rowNumber}`;
+  const url = `${SHEETS_API}/${encodeURIComponent(
+    credentials.spreadsheetId,
+  )}/values/${range}?valueInputOption=RAW`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${token.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        values: [[claim.claimedOn, claim.bankLast5]],
+      }),
+      signal,
+      redirect: "error",
+      cache: "no-store",
+    });
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  if (!response.ok) return statusFailure(response.status);
+
+  try {
+    await readJson(response);
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  return { kind: "ok" };
 }
 
 /**

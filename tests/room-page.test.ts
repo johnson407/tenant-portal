@@ -7,10 +7,12 @@ const mocks = vi.hoisted(() => ({
   getRoomSessionVersion: vi.fn(),
   getRoomFeed: vi.fn(),
   getBankAccount: vi.fn(),
+  isAdminSession: vi.fn(),
 }));
 
 vi.mock("@/lib/session-cookies", () => ({
   getSessionClaims: mocks.getSessionClaims,
+  isAdminSession: mocks.isAdminSession,
 }));
 
 vi.mock("@/lib/session-version", () => ({
@@ -41,6 +43,7 @@ const FEED_A: RoomFeed = {
       electricity: 50,
       total: 900,
       dueDate: "2026-11-01",
+      claim: null,
     },
   ],
   payments: [
@@ -64,6 +67,7 @@ const FEED_B: RoomFeed = {
       electricity: 0,
       total: 800,
       dueDate: "2026-12-01",
+      claim: null,
     },
   ],
   payments: [],
@@ -390,6 +394,72 @@ describe("room dashboard bank account", () => {
     expect(html).toContain("租約開始");
     expect(html).not.toContain("租金匯款帳戶");
     expect(html).not.toContain("kv secret");
+  });
+});
+
+describe("room dashboard payment claims", () => {
+  it("renders a claim form on an open bill", async () => {
+    const html = await renderRoom("a");
+
+    expect(html).toContain('name="period"');
+    expect(html).toContain('value="2026-10"');
+    expect(html).toContain('name="claimedOn"');
+    expect(html).toContain('type="date"');
+    expect(html).toContain('name="bankLast5"');
+    expect(html).toMatch(/maxlength="5"/i);
+    expect(html).toMatch(/inputmode="numeric"/i);
+    expect(html).toContain("回報付款");
+  });
+
+  it("shows a pending claim with only the last two suffix digits", async () => {
+    mocks.getRoomFeed.mockResolvedValue({
+      kind: "ok",
+      feed: {
+        ...FEED_A,
+        openBills: [
+          {
+            ...FEED_A.openBills[0],
+            claim: { claimedOn: "2026-10-28", bankLast5: "01234" },
+          },
+        ],
+      },
+    });
+
+    const zh = await renderRoom("a");
+    const en = await renderRoom("a", "en");
+
+    expect(zh).toContain("已於 2026年10月28日 回報付款");
+    expect(zh).toContain("•••34");
+    expect(zh).not.toContain("01234");
+    expect(zh).toContain('name="bankLast5"');
+    expect(zh).toContain('name="claimedOn"');
+    expect(zh).toContain('value="2026-10-28"');
+
+    expect(en).toContain("Payment reported on Oct 28, 2026");
+    expect(en).toContain("•••34");
+    expect(en).not.toContain("01234");
+  });
+
+  it("shows no form on a paid bill", async () => {
+    mocks.getRoomFeed.mockResolvedValue({
+      kind: "ok",
+      feed: { ...FEED_A, openBills: [] },
+    });
+
+    const html = await renderRoom("a");
+
+    expect(html).toContain("已收款 2026年10月5日");
+    expect(html).not.toContain('name="bankLast5"');
+    expect(html).not.toContain("回報付款");
+  });
+
+  it("shows no form when the feed is unavailable", async () => {
+    mocks.getRoomFeed.mockResolvedValue({ kind: "unavailable" });
+
+    const html = await renderRoom("a");
+
+    expect(html).not.toContain('name="bankLast5"');
+    expect(html).not.toContain("回報付款");
   });
 });
 

@@ -6,6 +6,7 @@ import {
   LEASES_HEADER,
   PERIOD_PATTERN,
   buildRoomFeed,
+  findBillRow,
   isRealIsoDate,
   parseRoomCell,
   parseWholeTwd,
@@ -26,7 +27,7 @@ function makeSnapshot(
 }
 
 function validBill(overrides: Partial<Record<number, unknown>> = {}): unknown[] {
-  const row: unknown[] = ["a", "2026-10", "750", "", "", "2026-11-01", ""];
+  const row: unknown[] = ["a", "2026-10", "750", "", "", "2026-11-01", "", "", ""];
   for (const [index, value] of Object.entries(overrides)) {
     row[Number(index)] = value;
   }
@@ -59,6 +60,8 @@ describe("AppFeed constants", () => {
       "electricity",
       "due_date",
       "paid_on",
+      "claimed_on",
+      "bank_last5",
     ]);
     expect([...LEASES_HEADER]).toEqual([
       "room",
@@ -136,6 +139,7 @@ describe("Bills validation", () => {
       electricity: 50,
       total: 900,
       dueDate: "2026-11-01",
+      claim: null,
     });
   });
 
@@ -151,6 +155,56 @@ describe("Bills validation", () => {
       electricity: 0,
       total: 750,
     });
+  });
+
+  it("projects a pending claim on an open bill", () => {
+    const result = feedFor(
+      makeSnapshot([validBill({ 7: "2026-10-28", 8: "01234" })]),
+    );
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.feed.openBills[0].claim).toEqual({
+      claimedOn: "2026-10-28",
+      bankLast5: "01234",
+    });
+  });
+
+  it("keeps a confirmed bill out of open bills even with leftover claim cells", () => {
+    const result = feedFor(
+      makeSnapshot([
+        validBill({ 6: "2026-10-30", 7: "2026-10-28", 8: "01234" }),
+      ]),
+    );
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.feed.openBills).toHaveLength(0);
+    expect(result.feed.payments).toHaveLength(1);
+    expect(result.feed.payments[0].period).toBe("2026-10");
+  });
+
+  it.each([
+    ["only the claimed date", { 7: "2026-10-28" }],
+    ["only the bank suffix", { 8: "01234" }],
+    ["an impossible claimed date", { 7: "2026-02-30", 8: "01234" }],
+    ["a four-digit suffix", { 7: "2026-10-28", 8: "0123" }],
+    ["a six-digit suffix", { 7: "2026-10-28", 8: "012345" }],
+    ["a suffix with letters", { 7: "2026-10-28", 8: "0123a" }],
+  ])("fails the whole room closed for %s", (_label, overrides) => {
+    const result = feedFor(makeSnapshot([validBill(overrides)]));
+
+    expect(result).toEqual({ kind: "unavailable" });
+  });
+
+  it("accepts a five-digit suffix with a leading zero", () => {
+    const result = feedFor(
+      makeSnapshot([validBill({ 7: "2026-10-28", 8: "00042" })]),
+    );
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.feed.openBills[0].claim?.bankLast5).toBe("00042");
   });
 
   it("projects payments newest first and keeps the latest 12", () => {
@@ -219,6 +273,8 @@ describe("Bills validation", () => {
     ["electricity", { 4: "-1" }],
     ["due_date", { 5: "2026-02-30" }],
     ["paid_on", { 6: "2026-04-31" }],
+    ["claimed_on", { 7: "2026-04-31", 8: "01234" }],
+    ["bank_last5", { 7: "2026-10-28", 8: "0123x" }],
   ])("fails the whole room closed for a bad %s", (_column, overrides) => {
     const result = feedFor(makeSnapshot([validBill(overrides)]));
     expect(result).toEqual({ kind: "unavailable" });
@@ -301,8 +357,8 @@ describe("Leases validation", () => {
 
 describe("structural failures", () => {
   it.each([
-    ["Bills header renamed", { bills: [["room", "period", "rent", "water", "electricity", "due", "paid_on"]], leases: [[...LEASES_HEADER]] }],
-    ["Bills header reordered", { bills: [["period", "room", "rent", "water", "electricity", "due_date", "paid_on"]], leases: [[...LEASES_HEADER]] }],
+    ["Bills header renamed", { bills: [["room", "period", "rent", "water", "electricity", "due", "paid_on", "claimed_on", "bank_last5"]], leases: [[...LEASES_HEADER]] }],
+    ["Bills header reordered", { bills: [["period", "room", "rent", "water", "electricity", "due_date", "paid_on", "claimed_on", "bank_last5"]], leases: [[...LEASES_HEADER]] }],
     ["Leases header missing", { bills: [[...BILLS_HEADER]], leases: [] }],
     ["row wider than the range", { bills: [[...BILLS_HEADER], [...validBill(), "extra"]], leases: [[...LEASES_HEADER]] }],
   ])("makes the whole feed unavailable for %s", (_label, snapshot) => {
@@ -391,6 +447,66 @@ describe("unattributable and PII rows", () => {
   it("rejects an invalid runtime room", () => {
     expect(feedFor(makeSnapshot(), "f" as RoomLetter)).toEqual({
       kind: "unavailable",
+    });
+  });
+});
+
+describe("findBillRow", () => {
+  it("returns the sheet row number, not the snapshot index", () => {
+    const snapshot = makeSnapshot([
+      validBill({ 0: "b", 1: "2026-10", 2: "800" }),
+      validBill({ 0: "a", 1: "2026-10", 2: "750" }),
+      validBill({ 0: "a", 1: "2026-11", 2: "760" }),
+    ]);
+
+    const lookup = findBillRow(snapshot, "a", "2026-11");
+
+    expect(lookup).toMatchObject({
+      ok: true,
+      rowNumber: 4,
+      bill: { room: "a", period: "2026-11", rent: 760 },
+    });
+  });
+
+  it("returns a paid bill so the caller can reject the change", () => {
+    const lookup = findBillRow(
+      makeSnapshot([validBill({ 6: "2026-10-05" })]),
+      "a",
+      "2026-10",
+    );
+
+    expect(lookup.ok).toBe(true);
+    if (!lookup.ok) return;
+    expect(lookup.bill.paidOn).toBe("2026-10-05");
+  });
+
+  it.each([
+    ["an unknown period", makeSnapshot([validBill()]), "2026-12", "unknown-period"],
+    [
+      "a duplicate row",
+      makeSnapshot([validBill(), validBill({ 2: "800" })]),
+      "2026-10",
+      "duplicate",
+    ],
+    [
+      "a row with a valid room but invalid column",
+      makeSnapshot([validBill({ 8: "1234" })]),
+      "2026-10",
+      "invalid",
+    ],
+  ])("returns a typed reason for %s", (_label, snapshot, period, reason) => {
+    expect(findBillRow(snapshot, "a", period)).toEqual({ ok: false, reason });
+  });
+
+  it("returns a header reason when the Bills header is wrong", () => {
+    const snapshot: AppFeedSnapshot = {
+      bills: [["room", "period", "rent", "water", "electricity", "due_date", "paid_on"]],
+      leases: [[...LEASES_HEADER]],
+    };
+
+    expect(findBillRow(snapshot, "a", "2026-10")).toEqual({
+      ok: false,
+      reason: "headers",
     });
   });
 });

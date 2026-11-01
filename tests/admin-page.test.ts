@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   redirect: vi.fn(),
   notFound: vi.fn(),
   getBankAccount: vi.fn(),
+  listPendingClaims: vi.fn(),
   resetForm: vi.fn(),
   bankForm: vi.fn(),
 }));
@@ -25,6 +26,10 @@ vi.mock("@/app/[lang]/logout-actions", () => ({
 
 vi.mock("@/lib/bank-account", () => ({
   getBankAccount: mocks.getBankAccount,
+}));
+
+vi.mock("@/lib/appfeed/claims", () => ({
+  listPendingClaims: mocks.listPendingClaims,
 }));
 
 vi.mock("@/app/[lang]/admin/reset-form", () => ({
@@ -52,6 +57,7 @@ beforeEach(() => {
     throw REDIRECT;
   });
   mocks.getBankAccount.mockResolvedValue(null);
+  mocks.listPendingClaims.mockResolvedValue({ kind: "ok", claims: [] });
   mocks.resetForm.mockReturnValue(null);
   mocks.bankForm.mockReturnValue(null);
 });
@@ -106,6 +112,7 @@ describe("localized admin page", () => {
 
     expect(mocks.redirect).toHaveBeenCalledWith("/en/admin/login");
     expect(mocks.getBankAccount).not.toHaveBeenCalled();
+    expect(mocks.listPendingClaims).not.toHaveBeenCalled();
   });
 
   it("passes saved values to the bank form for prefill", async () => {
@@ -148,5 +155,75 @@ describe("localized admin page", () => {
     expect(enHtml).toContain("Bank account details are temporarily unavailable. Try again later.");
     expect(mocks.bankForm).not.toHaveBeenCalled();
     expect(mocks.resetForm).toHaveBeenCalled();
+  });
+});
+
+describe("admin payment claims", () => {
+  const CLAIM = {
+    room: "a",
+    period: "2026-11",
+    claimedOn: "2026-10-30",
+    bankLast5: "01234",
+  };
+
+  it("lists pending claims with the full suffix and a formatted date", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listPendingClaims.mockResolvedValue({ kind: "ok", claims: [CLAIM] });
+
+    const html = renderToStaticMarkup(
+      await AdminPage({ params: Promise.resolve({ lang: "zh-TW" }) }),
+    );
+
+    expect(html).toContain("待確認的付款回報");
+    expect(html).toContain(">a</td>");
+    expect(html).toContain("2026-11");
+    expect(html).toContain("2026年10月30日");
+    expect(html).toContain("01234");
+    expect(mocks.listPendingClaims).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the empty state when no claim is pending", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+
+    const html = renderToStaticMarkup(
+      await AdminPage({ params: Promise.resolve({ lang: "en" }) }),
+    );
+
+    expect(html).toContain("Pending payment claims");
+    expect(html).toContain("No pending payment claims.");
+  });
+
+  it("shows the unavailable notice and keeps the reset and bank cards", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listPendingClaims.mockRejectedValue(new Error("sheet down"));
+
+    const html = renderToStaticMarkup(
+      await AdminPage({ params: Promise.resolve({ lang: "en" }) }),
+    );
+
+    expect(html).toContain("Payment claims are temporarily unavailable. Try again later.");
+    expect(mocks.getBankAccount).toHaveBeenCalledTimes(1);
+    expect(mocks.resetForm).toHaveBeenCalled();
+    expect(mocks.bankForm).toHaveBeenCalled();
+  });
+
+  it("places the full-width claims card after the reset and bank cards", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.resetForm.mockReturnValue("reset-card");
+    mocks.bankForm.mockReturnValue("bank-card");
+
+    const html = renderToStaticMarkup(
+      await AdminPage({ params: Promise.resolve({ lang: "en" }) }),
+    );
+
+    const resetAt = html.indexOf("reset-card");
+    const bankAt = html.indexOf("bank-card");
+    const claimsAt = html.indexOf("Pending payment claims");
+
+    expect(html).toContain("grid gap-6 lg:grid-cols-2");
+    expect(html).toContain("lg:col-span-2");
+    expect(resetAt).toBeGreaterThan(-1);
+    expect(bankAt).toBeGreaterThan(resetAt);
+    expect(claimsAt).toBeGreaterThan(bankAt);
   });
 });

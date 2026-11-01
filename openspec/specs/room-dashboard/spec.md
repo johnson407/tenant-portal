@@ -7,7 +7,7 @@ Presents each authenticated tenant a private dashboard for their own room, showi
 ## Requirements
 
 ### Requirement: Room dashboard display
-For each authenticated tenant with a valid session, the system SHALL display a dashboard for their room showing bills, payments, and lease dates read from AppFeed and scoped to the session's room, plus the configured bank account reference shared by all rooms. It SHALL show open bills, up to 12 recent payments, the room's lease, and the bank account section when one is configured, and MUST NOT render placeholder data in production.
+For each authenticated tenant with a valid session, the system SHALL display a dashboard for their room showing bills, payments, and lease dates read from AppFeed and scoped to the session's room, plus the configured bank account reference shared by all rooms. It SHALL show open bills, up to 12 recent payments, the room's lease, and the bank account section when one is configured, and MUST NOT render placeholder data in production. Each open bill SHALL offer a claim form and SHALL show the pending claim state when one exists.
 
 #### Scenario: Tenant views own dashboard
 - **WHEN** the tenant authenticated for room `E` opens their dashboard
@@ -49,9 +49,21 @@ For each authenticated tenant with a valid session, the system SHALL display a d
 - **WHEN** any room dashboard renders in production
 - **THEN** it contains no placeholder amounts, dates, sample-data badge, or sample-data caption
 
+#### Scenario: Open bill offers a claim form
+- **WHEN** the tenant has an open bill with no claim
+- **THEN** the bill shows the localized claim form with a paid date field and a five-digit suffix field
+
+#### Scenario: Pending claim is visible
+- **WHEN** the tenant has an open bill with a claim
+- **THEN** the bill shows the localized pending state and its claimed date, and the form still allows a replacement
+
+#### Scenario: Paid bill has no claim form
+- **WHEN** a bill has a paid_on value
+- **THEN** the bill shows no claim form and no pending state
+
 ### Requirement: Dashboard lease and payment presentation
 
-The room dashboard SHALL place the room's lease start, lease end, and renewal decision due adjacent to the room heading, and SHALL present payment history inside a disclosure that is collapsed by default. The disclosure MUST work without client-side JavaScript and MUST use the localized payments label as its visible control text.
+The room dashboard SHALL place the room's lease start, lease end, and renewal decision due adjacent to the room heading, and SHALL present payment history inside a disclosure that is collapsed by default. The disclosure MUST work without client-side JavaScript and MUST use the localized payments label as its visible control text. The claim form SHALL sit with its open bill and MUST submit without client-side JavaScript.
 
 #### Scenario: Lease facts appear next to the room heading
 - **WHEN** an authenticated tenant with a valid lease opens their dashboard
@@ -76,3 +88,7 @@ The room dashboard SHALL place the room's lease start, lease end, and renewal de
 #### Scenario: No lease facts when the feed is unavailable
 - **WHEN** AppFeed is unavailable
 - **THEN** the header renders no lease facts and the localized generic unavailable notice remains
+
+#### Scenario: Claim form submits without JavaScript
+- **WHEN** the tenant disables client-side JavaScript and submits a valid claim
+- **THEN** the action runs, the page reloads, and the pending state shows

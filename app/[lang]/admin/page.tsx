@@ -3,7 +3,9 @@ import { notFound, redirect } from "next/navigation";
 import PortalShell from "@/app/[lang]/portal-shell";
 import SectionCard from "@/app/[lang]/section-card";
 import { type BankAccount, getBankAccount } from "@/lib/bank-account";
+import { listPendingClaims, type PendingClaimsResult } from "@/lib/appfeed/claims";
 import { getDictionary, isLocale, localePath } from "@/lib/i18n";
+import { formatDate } from "@/lib/i18n/format";
 import { isAdminSession } from "@/lib/session-cookies";
 import AdminBankForm from "./bank-form";
 import AdminResetForm from "./reset-form";
@@ -31,6 +33,13 @@ export default async function AdminPage({ params }: AdminPageProps) {
     bankAccount = await getBankAccount();
   } catch {
     bankUnavailable = true;
+  }
+
+  let claimsResult: PendingClaimsResult = { kind: "unavailable" };
+  try {
+    claimsResult = await listPendingClaims();
+  } catch {
+    claimsResult = { kind: "unavailable" };
   }
 
   return (
@@ -62,6 +71,53 @@ export default async function AdminPage({ params }: AdminPageProps) {
             initialValues={bankAccount}
           />
         )}
+        <div className="lg:col-span-2">
+          <SectionCard title={dictionary.admin.claims.sectionHeading}>
+            {claimsResult.kind !== "ok" ? (
+              <p className="text-sm text-slate-300">
+                {dictionary.admin.claims.unavailable}
+              </p>
+            ) : claimsResult.claims.length === 0 ? (
+              <p className="text-sm text-slate-300">
+                {dictionary.admin.claims.empty}
+              </p>
+            ) : (
+              <table className="w-full text-left text-sm">
+                <thead className="text-slate-400">
+                  <tr>
+                    <th scope="col" className="py-2 pr-4 font-medium">
+                      {dictionary.admin.claims.room}
+                    </th>
+                    <th scope="col" className="py-2 pr-4 font-medium">
+                      {dictionary.admin.claims.period}
+                    </th>
+                    <th scope="col" className="py-2 pr-4 font-medium">
+                      {dictionary.admin.claims.claimedOn}
+                    </th>
+                    <th scope="col" className="py-2 font-medium">
+                      {dictionary.admin.claims.bankLast5}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {claimsResult.claims.map((claim) => (
+                    <tr
+                      key={`${claim.room}:${claim.period}`}
+                      className="border-t border-slate-800 text-slate-200"
+                    >
+                      <td className="py-2 pr-4 uppercase">{claim.room}</td>
+                      <td className="py-2 pr-4">{claim.period}</td>
+                      <td className="py-2 pr-4">
+                        {formatDate(claim.claimedOn, lang)}
+                      </td>
+                      <td className="py-2 font-mono">{claim.bankLast5}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </SectionCard>
+        </div>
       </div>
     </PortalShell>
   );

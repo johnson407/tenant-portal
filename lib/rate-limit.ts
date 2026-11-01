@@ -24,6 +24,12 @@ export const ADMIN_RESET_RATE_BUCKET: RateBucket = {
   windowSeconds: 15 * 60,
 };
 
+export const CLAIM_RATE_BUCKET: RateBucket = {
+  prefix: "ratelimit:claim",
+  maxAttempts: 10,
+  windowSeconds: 15 * 60,
+};
+
 export type RateLimitDecision = {
   allowed: boolean;
   retryAfterSeconds: number | null;
