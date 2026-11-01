@@ -438,7 +438,6 @@ describe("unattributable and PII rows", () => {
     expect(logged).not.toContain("jane@example.com");
     expect(logged).not.toContain("2026-11-01");
     expect(warn).toHaveBeenCalledWith("[appfeed] room unavailable", {
-      room: "a",
       invalidBillsRows: 1,
       invalidLeasesRows: 0,
     });

@@ -7,8 +7,10 @@ const mocks = vi.hoisted(() => ({
   notFound: vi.fn(),
   getBankAccount: vi.fn(),
   listPendingClaims: vi.fn(),
+  listPendingRepairs: vi.fn(),
   resetForm: vi.fn(),
   bankForm: vi.fn(),
+  repairDoneForm: vi.fn(),
 }));
 
 vi.mock("@/lib/session-cookies", () => ({
@@ -32,12 +34,20 @@ vi.mock("@/lib/appfeed/claims", () => ({
   listPendingClaims: mocks.listPendingClaims,
 }));
 
+vi.mock("@/lib/appfeed/repairs", () => ({
+  listPendingRepairs: mocks.listPendingRepairs,
+}));
+
 vi.mock("@/app/[lang]/admin/reset-form", () => ({
   default: mocks.resetForm,
 }));
 
 vi.mock("@/app/[lang]/admin/bank-form", () => ({
   default: mocks.bankForm,
+}));
+
+vi.mock("@/app/[lang]/admin/repair-done-form", () => ({
+  default: mocks.repairDoneForm,
 }));
 
 import AdminPage, { generateMetadata } from "@/app/[lang]/admin/page";
@@ -58,8 +68,10 @@ beforeEach(() => {
   });
   mocks.getBankAccount.mockResolvedValue(null);
   mocks.listPendingClaims.mockResolvedValue({ kind: "ok", claims: [] });
+  mocks.listPendingRepairs.mockResolvedValue({ kind: "ok", repairs: [] });
   mocks.resetForm.mockReturnValue(null);
   mocks.bankForm.mockReturnValue(null);
+  mocks.repairDoneForm.mockReturnValue(null);
 });
 
 describe("localized admin page", () => {
@@ -113,6 +125,7 @@ describe("localized admin page", () => {
     expect(mocks.redirect).toHaveBeenCalledWith("/en/admin/login");
     expect(mocks.getBankAccount).not.toHaveBeenCalled();
     expect(mocks.listPendingClaims).not.toHaveBeenCalled();
+    expect(mocks.listPendingRepairs).not.toHaveBeenCalled();
   });
 
   it("passes saved values to the bank form for prefill", async () => {
@@ -225,5 +238,163 @@ describe("admin payment claims", () => {
     expect(resetAt).toBeGreaterThan(-1);
     expect(bankAt).toBeGreaterThan(resetAt);
     expect(claimsAt).toBeGreaterThan(bankAt);
+  });
+});
+
+describe("admin repair requests", () => {
+  const REPAIR = {
+    room: "a" as const,
+    requestId: "0123456789abcdef",
+    category: "plumbing" as const,
+    note: "Leaking tap in the bathroom",
+    submittedOn: "2026-10-30",
+  };
+
+  it("lists pending repairs with the category, note, date, status, and form", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listPendingRepairs.mockResolvedValue({
+      kind: "ok",
+      repairs: [REPAIR],
+    });
+    mocks.repairDoneForm.mockReturnValue("repair-done-form");
+
+    const html = renderToStaticMarkup(
+      await AdminPage({ params: Promise.resolve({ lang: "zh-TW" }) }),
+    );
+
+    expect(html).toContain("待處理的報修申請");
+    expect(html).toContain("房間 a</span>");
+    expect(html).toContain("水管");
+    expect(html).toContain("Leaking tap in the bathroom");
+    expect(html).toContain("2026年10月30日");
+    expect(html).toContain("待處理");
+    expect(html).toContain("repair-done-form");
+    expect(html).toContain("break-words");
+    const repairsAt = html.indexOf("待處理的報修申請");
+    expect(html.slice(repairsAt)).not.toContain("<table");
+    expect(html.slice(repairsAt)).not.toContain("overflow-x-auto");
+    expect(mocks.repairDoneForm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        locale: "zh-TW",
+        requestId: REPAIR.requestId,
+      }),
+      undefined,
+    );
+  });
+
+  it("renders the English repair queue labels", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listPendingRepairs.mockResolvedValue({
+      kind: "ok",
+      repairs: [REPAIR],
+    });
+    mocks.repairDoneForm.mockReturnValue("repair-done-form");
+
+    const html = renderToStaticMarkup(
+      await AdminPage({ params: Promise.resolve({ lang: "en" }) }),
+    );
+
+    expect(html).toContain("Pending repair requests");
+    expect(html).toContain("Plumbing");
+    expect(html).toContain("Oct 30, 2026");
+    expect(html).toContain("Pending");
+  });
+
+  it("renders the empty queue state", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+
+    const html = renderToStaticMarkup(
+      await AdminPage({ params: Promise.resolve({ lang: "en" }) }),
+    );
+
+    expect(html).toContain("Pending repair requests");
+    expect(html).toContain("No pending repair requests.");
+    expect(mocks.repairDoneForm).not.toHaveBeenCalled();
+  });
+
+  it("redirects when the repair accessor denies the session", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listPendingRepairs.mockResolvedValue({ kind: "denied" });
+
+    await expect(
+      AdminPage({ params: Promise.resolve({ lang: "en" }) }),
+    ).rejects.toBe(REDIRECT);
+
+    expect(mocks.redirect).toHaveBeenCalledWith("/en/admin/login");
+  });
+
+  it("shows the repair unavailable notice while claims stay usable", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listPendingRepairs.mockResolvedValue({ kind: "unavailable" });
+    mocks.listPendingClaims.mockResolvedValue({
+      kind: "ok",
+      claims: [
+        {
+          room: "a",
+          period: "2026-11",
+          claimedOn: "2026-10-30",
+          bankLast5: "01234",
+        },
+      ],
+    });
+
+    const html = renderToStaticMarkup(
+      await AdminPage({ params: Promise.resolve({ lang: "en" }) }),
+    );
+
+    expect(html).toContain("Repair requests are temporarily unavailable");
+    expect(html).toContain("Pending payment claims");
+    expect(html).toContain("01234");
+    expect(mocks.resetForm).toHaveBeenCalled();
+    expect(mocks.bankForm).toHaveBeenCalled();
+  });
+
+  it("keeps repairs usable when the claims list fails", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listPendingClaims.mockRejectedValue(new Error("claims down"));
+    mocks.listPendingRepairs.mockResolvedValue({
+      kind: "ok",
+      repairs: [REPAIR],
+    });
+    mocks.repairDoneForm.mockReturnValue("repair-done-form");
+
+    const html = renderToStaticMarkup(
+      await AdminPage({ params: Promise.resolve({ lang: "en" }) }),
+    );
+
+    expect(html).toContain("Payment claims are temporarily unavailable");
+    expect(html).toContain("Leaking tap in the bathroom");
+    expect(html).toContain("repair-done-form");
+  });
+
+  it("places the repairs card after the claims card at full width", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listPendingClaims.mockResolvedValue({
+      kind: "ok",
+      claims: [
+        {
+          room: "a",
+          period: "2026-11",
+          claimedOn: "2026-10-30",
+          bankLast5: "01234",
+        },
+      ],
+    });
+    mocks.listPendingRepairs.mockResolvedValue({
+      kind: "ok",
+      repairs: [REPAIR],
+    });
+    mocks.repairDoneForm.mockReturnValue("repair-done-form");
+
+    const html = renderToStaticMarkup(
+      await AdminPage({ params: Promise.resolve({ lang: "en" }) }),
+    );
+
+    expect(html.indexOf("Pending payment claims")).toBeLessThan(
+      html.indexOf("Pending repair requests"),
+    );
+    expect(html).toContain("lg:col-span-2");
+    expect(mocks.listPendingClaims).toHaveBeenCalledTimes(1);
+    expect(mocks.listPendingRepairs).toHaveBeenCalledTimes(1);
   });
 });

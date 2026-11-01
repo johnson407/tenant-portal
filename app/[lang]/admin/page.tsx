@@ -4,11 +4,14 @@ import PortalShell from "@/app/[lang]/portal-shell";
 import SectionCard from "@/app/[lang]/section-card";
 import { type BankAccount, getBankAccount } from "@/lib/bank-account";
 import { listPendingClaims, type PendingClaimsResult } from "@/lib/appfeed/claims";
+import { listPendingRepairs } from "@/lib/appfeed/repairs";
+import type { AdminRepairsResult } from "@/lib/appfeed/types";
 import { getDictionary, isLocale, localePath } from "@/lib/i18n";
 import { formatDate } from "@/lib/i18n/format";
 import { isAdminSession } from "@/lib/session-cookies";
 import AdminBankForm from "./bank-form";
 import AdminResetForm from "./reset-form";
+import RepairDoneForm from "./repair-done-form";
 
 export const instant = false;
 
@@ -40,6 +43,16 @@ export default async function AdminPage({ params }: AdminPageProps) {
     claimsResult = await listPendingClaims();
   } catch {
     claimsResult = { kind: "unavailable" };
+  }
+
+  let repairsResult: AdminRepairsResult = { kind: "unavailable" };
+  try {
+    repairsResult = await listPendingRepairs();
+  } catch {
+    repairsResult = { kind: "unavailable" };
+  }
+  if (repairsResult.kind === "denied") {
+    redirect(localePath(lang, "/admin/login"));
   }
 
   return (
@@ -115,6 +128,64 @@ export default async function AdminPage({ params }: AdminPageProps) {
                   ))}
                 </tbody>
               </table>
+            )}
+          </SectionCard>
+        </div>
+        <div className="lg:col-span-2">
+          <SectionCard title={dictionary.admin.repairs.sectionHeading}>
+            {repairsResult.kind !== "ok" ? (
+              <p className="text-sm text-slate-300">
+                {dictionary.admin.repairs.unavailable}
+              </p>
+            ) : repairsResult.repairs.length === 0 ? (
+              <p className="text-sm text-slate-300">
+                {dictionary.admin.repairs.empty}
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {repairsResult.repairs.map((repair) => (
+                  <li
+                    key={repair.requestId}
+                    className="rounded-md border border-slate-800 bg-slate-950/50 p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <span className="font-mono text-sm uppercase text-slate-100">
+                          {dictionary.admin.repairs.room} {repair.room}
+                        </span>
+                        <span className="text-sm font-medium text-slate-100">
+                          {
+                            dictionary.room.repairs.categories[
+                              repair.category
+                            ]
+                          }
+                        </span>
+                      </div>
+                      <span className="rounded-full bg-amber-950 px-2.5 py-1 text-xs font-medium text-amber-200">
+                        {dictionary.admin.repairs.pending}
+                      </span>
+                    </div>
+                    <p className="mt-2 break-words text-sm text-slate-200">
+                      {repair.note}
+                    </p>
+                    <div className="mt-3 flex flex-wrap items-end justify-between gap-3 border-t border-slate-800 pt-3">
+                      <div className="text-xs">
+                        <span className="text-slate-300">
+                          {dictionary.admin.repairs.submittedOn}
+                        </span>{" "}
+                        <span className="font-mono text-slate-100">
+                          {formatDate(repair.submittedOn, lang)}
+                        </span>
+                      </div>
+                      <RepairDoneForm
+                        locale={lang}
+                        requestId={repair.requestId}
+                        labels={dictionary.admin.repairs}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
             )}
           </SectionCard>
         </div>

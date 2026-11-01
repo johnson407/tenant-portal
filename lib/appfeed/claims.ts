@@ -6,6 +6,7 @@ import { clientIpFromHeaders } from "../client-ip";
 import { isAdminSession } from "../session-cookies";
 import { CLAIM_RATE_BUCKET, consumeAttempt } from "../rate-limit";
 import type { PendingClaim } from "./types";
+import { todayInTaipei } from "./dates";
 import { fetchAppFeedSnapshot, writeClaimCells } from "./google";
 import {
   BANK_LAST5_PATTERN,
@@ -36,21 +37,6 @@ export type PendingClaimsResult =
 function text(value: unknown): string {
   if (value === null || value === undefined) return "";
   return String(value).trim();
-}
-
-/** Returns today's date in Asia/Taipei as YYYY-MM-DD. */
-export function todayInTaipei(now: Date = new Date()): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Taipei",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(now);
-
-  const part = (type: string) =>
-    parts.find((entry) => entry.type === type)?.value ?? "";
-
-  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 /**

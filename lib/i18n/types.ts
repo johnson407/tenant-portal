@@ -75,6 +75,44 @@ export type Dictionary = {
         generic: string;
       };
     };
+    repairs: {
+      sectionHeading: string;
+      sectionCaption: string;
+      empty: string;
+      unavailable: string;
+      form: {
+        categoryLabel: string;
+        categoryPlaceholder: string;
+        noteLabel: string;
+        notePlaceholder: string;
+        noteHint: string;
+        warning: string;
+        submit: string;
+        submitting: string;
+        success: string;
+      };
+      history: {
+        submittedOn: string;
+        doneOn: string;
+        status: {
+          pending: string;
+          done: string;
+        };
+      };
+      categories: {
+        plumbing: string;
+        electrical: string;
+        appliance: string;
+        other: string;
+      };
+      errors: {
+        category: string;
+        note: string;
+        unavailable: string;
+        rate: string;
+        generic: string;
+      };
+    };
   };
   denied: {
     heading: string;
@@ -139,6 +177,27 @@ export type Dictionary = {
       period: string;
       claimedOn: string;
       bankLast5: string;
+    };
+    repairs: {
+      sectionHeading: string;
+      empty: string;
+      unavailable: string;
+      room: string;
+      category: string;
+      note: string;
+      submittedOn: string;
+      status: string;
+      pending: string;
+      done: string;
+      markDone: string;
+      marking: string;
+      errors: {
+        alreadyDone: string;
+        notFound: string;
+        unavailable: string;
+        rate: string;
+        generic: string;
+      };
     };
   };
 };

@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { RoomFeed } from "@/lib/appfeed/types";
+import type { RoomFeed, RoomRepair } from "@/lib/appfeed/types";
 
 const mocks = vi.hoisted(() => ({
   getSessionClaims: vi.fn(),
   getRoomSessionVersion: vi.fn(),
   getRoomFeed: vi.fn(),
+  getRoomRepairs: vi.fn(),
   getBankAccount: vi.fn(),
   isAdminSession: vi.fn(),
 }));
@@ -21,6 +22,10 @@ vi.mock("@/lib/session-version", () => ({
 
 vi.mock("@/lib/appfeed/feed", () => ({
   getRoomFeed: mocks.getRoomFeed,
+}));
+
+vi.mock("@/lib/appfeed/repairs", () => ({
+  getRoomRepairs: mocks.getRoomRepairs,
 }));
 
 vi.mock("@/lib/bank-account", () => ({
@@ -75,6 +80,24 @@ const FEED_B: RoomFeed = {
   fetchedAt: "2026-11-01T04:00:00.000Z",
 };
 
+const REPAIR_PENDING: RoomRepair = {
+  requestId: "0123456789abcdef",
+  category: "plumbing",
+  note: "Leaking tap in the bathroom",
+  submittedOn: "2026-10-30",
+  status: "pending",
+  doneOn: null,
+};
+
+const REPAIR_DONE: RoomRepair = {
+  requestId: "fedcba9876543210",
+  category: "electrical",
+  note: "Fixed light in the kitchen",
+  submittedOn: "2026-10-20",
+  status: "done",
+  doneOn: "2026-10-25",
+};
+
 async function renderRoom(room: string, lang = "zh-TW"): Promise<string> {
   const ui = await RoomPage({ params: Promise.resolve({ lang, room }) });
   return renderToStaticMarkup(ui);
@@ -101,6 +124,7 @@ beforeEach(() => {
   mocks.getSessionClaims.mockReset();
   mocks.getRoomSessionVersion.mockReset();
   mocks.getRoomFeed.mockReset();
+  mocks.getRoomRepairs.mockReset();
   mocks.getBankAccount.mockReset();
 
   mocks.getSessionClaims.mockResolvedValue({
@@ -111,6 +135,7 @@ beforeEach(() => {
   });
   mocks.getRoomSessionVersion.mockResolvedValue(4);
   mocks.getRoomFeed.mockResolvedValue({ kind: "ok", feed: FEED_A });
+  mocks.getRoomRepairs.mockResolvedValue({ kind: "ok", repairs: [] });
   mocks.getBankAccount.mockResolvedValue(null);
 });
 
@@ -460,6 +485,102 @@ describe("room dashboard payment claims", () => {
 
     expect(html).not.toContain('name="bankLast5"');
     expect(html).not.toContain("回報付款");
+  });
+});
+
+describe("room dashboard repairs", () => {
+  it("renders the form and history with the pending request first", async () => {
+    mocks.getRoomRepairs.mockResolvedValue({
+      kind: "ok",
+      repairs: [REPAIR_PENDING, REPAIR_DONE],
+    });
+
+    const html = await renderRoom("a");
+
+    expect(html).toContain("報修申請");
+    expect(html).toContain("送出報修申請");
+    expect(html).toContain('name="category"');
+    expect(html).toContain('name="note"');
+    expect(html).toMatch(/maxlength="200"/i);
+    expect(html).toContain("水管");
+    expect(html).toContain("Leaking tap in the bathroom");
+    expect(html).toContain("待處理");
+    expect(html).toContain("已完成");
+    expect(html).toContain("2026年10月30日");
+    expect(html).toContain("2026年10月25日");
+    expect(html.indexOf("Leaking tap")).toBeLessThan(
+      html.indexOf("Fixed light"),
+    );
+    expect(mocks.getRoomRepairs).toHaveBeenCalledWith("a");
+  });
+
+  it("renders the repair form and history in English", async () => {
+    mocks.getRoomRepairs.mockResolvedValue({
+      kind: "ok",
+      repairs: [REPAIR_PENDING, REPAIR_DONE],
+    });
+
+    const html = await renderRoom("a", "en");
+
+    expect(html).toContain("Repair requests");
+    expect(html).toContain("Send repair request");
+    expect(html).toContain("Plumbing");
+    expect(html).toContain("Electrical");
+    expect(html).toContain("Pending");
+    expect(html).toContain("Done");
+    expect(html).toContain("Oct 30, 2026");
+    expect(html).toContain("Oct 25, 2026");
+  });
+
+  it("keeps the form and shows the empty state when there are no requests", async () => {
+    const html = await renderRoom("a");
+
+    expect(html).toContain("送出報修申請");
+    expect(html).toContain("尚無報修申請。");
+    expect(html.indexOf("送出報修申請")).toBeLessThan(
+      html.indexOf("尚無報修申請。"),
+    );
+  });
+
+  it("hides the form and history when repairs are unavailable", async () => {
+    mocks.getRoomRepairs.mockResolvedValue({ kind: "unavailable" });
+
+    const html = await renderRoom("a");
+
+    expect(html).toContain("報修資料暫時無法取得");
+    expect(html).not.toContain('name="category"');
+    expect(html).not.toContain('name="note"');
+    expect(html).toContain("帳單");
+    expect(html).toContain("付款");
+    expect(html).toContain("租約開始");
+  });
+
+  it("keeps bills visible when the repair read fails", async () => {
+    mocks.getRoomRepairs.mockRejectedValue(new Error("sheet secret"));
+
+    const html = await renderRoom("a", "en");
+
+    expect(html).toContain("Repair requests are temporarily unavailable");
+    expect(html).toContain("Bills");
+    expect(html).toContain("Payments");
+    expect(html).toContain("Lease start");
+    expect(html).not.toContain("sheet secret");
+    expect(html).not.toContain('name="category"');
+  });
+
+  it("keeps the repair section visible when the feed is unavailable", async () => {
+    mocks.getRoomFeed.mockResolvedValue({ kind: "unavailable" });
+    mocks.getRoomRepairs.mockResolvedValue({
+      kind: "ok",
+      repairs: [REPAIR_PENDING],
+    });
+
+    const html = await renderRoom("a", "en");
+
+    expect(html).toContain("Data temporarily unavailable");
+    expect(html).toContain("Repair requests");
+    expect(html).toContain("Leaking tap in the bathroom");
+    expect(html).toContain("Send repair request");
   });
 });
 

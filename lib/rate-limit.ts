@@ -30,6 +30,18 @@ export const CLAIM_RATE_BUCKET: RateBucket = {
   windowSeconds: 15 * 60,
 };
 
+export const REPAIR_SUBMIT_RATE_BUCKET: RateBucket = {
+  prefix: "ratelimit:repair-submit",
+  maxAttempts: 10,
+  windowSeconds: 15 * 60,
+};
+
+export const REPAIR_DONE_RATE_BUCKET: RateBucket = {
+  prefix: "ratelimit:repair-done",
+  maxAttempts: 60,
+  windowSeconds: 15 * 60,
+};
+
 export type RateLimitDecision = {
   allowed: boolean;
   retryAfterSeconds: number | null;

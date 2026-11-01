@@ -6,6 +6,11 @@ import type {
   FeedPayment,
   FeedResult,
   PendingClaim,
+  PendingRepair,
+  RepairCategory,
+  RepairsSnapshot,
+  RepairStatus,
+  RoomRepairsResult,
 } from "./types";
 
 export const BILLS_HEADER = [
@@ -27,10 +32,38 @@ export const LEASES_HEADER = [
   "renewal_due",
 ] as const;
 
+export const REPAIRS_HEADER = [
+  "room",
+  "request_id",
+  "category",
+  "note",
+  "submitted_on",
+  "status",
+  "done_on",
+] as const;
+
+export const REPAIRS_RANGE = "Repairs!A:G";
+
+export const REPAIR_CATEGORIES = [
+  "plumbing",
+  "electrical",
+  "appliance",
+  "other",
+] as const;
+
 export const PERIOD_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 export const AMOUNT_PATTERN = /^\d{1,7}$/;
 export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export const BANK_LAST5_PATTERN = /^\d{5}$/;
+export const REPAIR_ID_PATTERN = /^[0-9a-f]{16}$/;
+export const REPAIR_NOTE_MAX = 200;
+
+const CONTROL_CHARACTER_PATTERN =
+  /[\p{Cc}\p{Zl}\p{Zp}\u061c\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/u;
+const EMAIL_PATTERN = /[^\s@]+@[^\s@]+\.[^\s@]+/u;
+const URL_PATTERN =
+  /(?:(?:https?|ftp):\/\/|www\.|mailto:|tel:)\S+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/\S*)?/iu;
+const LONG_DIGIT_RUN_PATTERN = /\p{Nd}{7,}/u;
 
 export type ParsedAmount =
   | { ok: true; value: number | null }
@@ -55,6 +88,16 @@ type LeaseRow = {
   renewalDue: string | null;
 };
 
+export type RepairRow = {
+  room: RoomLetter;
+  requestId: string;
+  category: RepairCategory;
+  note: string;
+  submittedOn: string;
+  status: RepairStatus;
+  doneOn: string | null;
+};
+
 type RoomErrorCounts = { bills: number; leases: number };
 
 type Validation =
@@ -65,6 +108,15 @@ type Validation =
       invalidRooms: Map<RoomLetter, RoomErrorCounts>;
       droppedBills: number;
       droppedLeases: number;
+    }
+  | { ok: false };
+
+export type RepairValidation =
+  | {
+      ok: true;
+      repairs: RepairRow[];
+      invalidRooms: Map<RoomLetter, number>;
+      droppedRepairs: number;
     }
   | { ok: false };
 
@@ -128,6 +180,78 @@ function parseBillRow(row: unknown[]): BillRow | null {
     paidOn,
     claimedOn,
     bankLast5,
+  };
+}
+
+export function isRepairCategory(value: string): value is RepairCategory {
+  return (REPAIR_CATEGORIES as readonly string[]).includes(value);
+}
+
+/**
+ * Checks a trimmed repair note. The note must be printable, short, and free of
+ * the personal data that the system can detect: emails, URLs, and long digit
+ * runs. Names and written addresses cannot be detected; the form warns against
+ * them and the note is never logged.
+ */
+export function isValidRepairNote(value: string): boolean {
+  if (CONTROL_CHARACTER_PATTERN.test(value)) return false;
+
+  const note = value.trim();
+  const length = Array.from(note).length;
+  if (length === 0 || length > REPAIR_NOTE_MAX) return false;
+
+  // Normalize compatibility forms so full-width digits, @, dots, and slashes
+  // cannot bypass the detectable-data checks.
+  const normalized = note.normalize("NFKC");
+
+  if (EMAIL_PATTERN.test(normalized)) return false;
+  if (URL_PATTERN.test(normalized)) return false;
+  if (LONG_DIGIT_RUN_PATTERN.test(normalized)) return false;
+  return true;
+}
+
+/** Parses one padded Repairs row. Returns null when any cell fails a rule. */
+export function parseRepairRow(row: unknown[]): RepairRow | null {
+  const room = parseRoomCell(row[0]);
+  if (!room) return null;
+
+  const requestId = cellText(row[1]);
+  if (!REPAIR_ID_PATTERN.test(requestId)) return null;
+
+  const category = cellText(row[2]);
+  if (!isRepairCategory(category)) return null;
+
+  const rawNote = row[3] === null || row[3] === undefined ? "" : String(row[3]);
+  if (!isValidRepairNote(rawNote)) return null;
+  const note = rawNote.trim();
+
+  const submittedOn = cellText(row[4]);
+  if (!isRealIsoDate(submittedOn)) return null;
+
+  const status = cellText(row[5]);
+  if (status !== "pending" && status !== "done") return null;
+
+  const doneOnText = cellText(row[6]);
+  const doneOn = doneOnText === "" ? null : doneOnText;
+
+  if (status === "pending") {
+    if (doneOn !== null) return null;
+  } else if (
+    doneOn === null ||
+    !isRealIsoDate(doneOn) ||
+    doneOn < submittedOn
+  ) {
+    return null;
+  }
+
+  return {
+    room,
+    requestId,
+    category,
+    note,
+    submittedOn,
+    status,
+    doneOn,
   };
 }
 
@@ -411,6 +535,218 @@ export function buildPendingClaims(
     );
 }
 
+function markRepairRoomInvalid(
+  invalidRooms: Map<RoomLetter, number>,
+  room: RoomLetter,
+): void {
+  invalidRooms.set(room, (invalidRooms.get(room) ?? 0) + 1);
+}
+
+/**
+ * Validates every Repairs row. Empty rows are ignored, rows with an invalid
+ * room cell are dropped, and an invalid row attributed to a room blocks only
+ * that room's repairs. A duplicate request ID invalidates both rows.
+ */
+export function validateRepairs(snapshot: RepairsSnapshot): RepairValidation {
+  if (!Array.isArray(snapshot.repairs)) {
+    console.warn("[appfeed] snapshot shape invalid", { reason: "repairs" });
+    return { ok: false };
+  }
+
+  if (!hasExactHeader(snapshot.repairs[0], REPAIRS_HEADER)) {
+    console.warn("[appfeed] header mismatch", { tab: "Repairs" });
+    return { ok: false };
+  }
+
+  const repairs: RepairRow[] = [];
+  const invalidRooms = new Map<RoomLetter, number>();
+  const byRequestId = new Map<string, RepairRow>();
+  let droppedRepairs = 0;
+
+  for (let index = 1; index < snapshot.repairs.length; index += 1) {
+    const rawRow = snapshot.repairs[index];
+    if (!Array.isArray(rawRow)) {
+      console.warn("[appfeed] snapshot shape invalid", {
+        tab: "Repairs",
+        row: index + 1,
+      });
+      return { ok: false };
+    }
+    if (rawRow.length > REPAIRS_HEADER.length) {
+      console.warn("[appfeed] row too wide", {
+        tab: "Repairs",
+        row: index + 1,
+      });
+      return { ok: false };
+    }
+    if (isBlankRow(rawRow)) continue;
+
+    const row = padRow(rawRow, REPAIRS_HEADER.length);
+    const room = parseRoomCell(row[0]);
+    if (!room) {
+      droppedRepairs += 1;
+      continue;
+    }
+
+    const repair = parseRepairRow(row);
+    if (!repair) {
+      markRepairRoomInvalid(invalidRooms, room);
+      continue;
+    }
+
+    const existing = byRequestId.get(repair.requestId);
+    if (existing) {
+      markRepairRoomInvalid(invalidRooms, existing.room);
+      markRepairRoomInvalid(invalidRooms, repair.room);
+      console.warn("[appfeed] duplicate repair request", { row: index + 1 });
+      continue;
+    }
+
+    byRequestId.set(repair.requestId, repair);
+    repairs.push(repair);
+  }
+
+  if (droppedRepairs > 0) {
+    console.warn("[appfeed] unattributable rows ignored", {
+      repairs: droppedRepairs,
+    });
+  }
+
+  return { ok: true, repairs, invalidRooms, droppedRepairs };
+}
+
+/**
+ * Projects one room's repairs. Pending requests come first, newest first, so a
+ * just-submitted request stays visible when the history is full. Done requests
+ * follow, newest done first. The result holds at most 20 requests.
+ */
+export function buildRoomRepairs(
+  snapshot: RepairsSnapshot,
+  room: RoomLetter,
+): RoomRepairsResult {
+  if (!isRoomLetter(room)) return { kind: "unavailable" };
+
+  const validation = validateRepairs(snapshot);
+  if (!validation.ok) return { kind: "unavailable" };
+
+  const invalidRows = validation.invalidRooms.get(room);
+  if (invalidRows !== undefined) {
+    console.warn("[appfeed] repair room unavailable", {
+      invalidRows,
+    });
+    return { kind: "unavailable" };
+  }
+
+  const repairs = validation.repairs
+    .filter((repair) => repair.room === room)
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
+      if (a.status === "pending") {
+        return (
+          b.submittedOn.localeCompare(a.submittedOn) ||
+          b.requestId.localeCompare(a.requestId)
+        );
+      }
+      return (
+        (b.doneOn ?? "").localeCompare(a.doneOn ?? "") ||
+        b.submittedOn.localeCompare(a.submittedOn) ||
+        a.requestId.localeCompare(b.requestId)
+      );
+    })
+    .slice(0, 20)
+    .map(({ requestId, category, note, submittedOn, status, doneOn }) => ({
+      requestId,
+      category,
+      note,
+      submittedOn,
+      status,
+      doneOn,
+    }));
+
+  return { kind: "ok", repairs };
+}
+
+/**
+ * Projects every pending request for the admin queue, oldest first. Returns null
+ * when the tab shape is invalid or any attributed row is invalid, so the queue
+ * never hides a pending request behind a partial result.
+ */
+export function buildPendingRepairs(
+  snapshot: RepairsSnapshot,
+): PendingRepair[] | null {
+  const validation = validateRepairs(snapshot);
+  if (!validation.ok) return null;
+
+  if (validation.invalidRooms.size > 0) {
+    console.warn("[appfeed] repair queue unavailable", {
+      invalidRooms: validation.invalidRooms.size,
+    });
+    return null;
+  }
+
+  return validation.repairs
+    .filter((repair) => repair.status === "pending")
+    .sort(
+      (a, b) =>
+        a.submittedOn.localeCompare(b.submittedOn) ||
+        a.room.localeCompare(b.room) ||
+        a.requestId.localeCompare(b.requestId),
+    )
+    .map(({ room, requestId, category, note, submittedOn }) => ({
+      room,
+      requestId,
+      category,
+      note,
+      submittedOn,
+    }));
+}
+
+export type RepairRowLookup =
+  | { ok: true; rowNumber: number; repair: RepairRow }
+  | { ok: false; reason: "headers" | "not-found" | "invalid" | "duplicate" };
+
+/**
+ * Finds one request by ID and returns its sheet row number. The whole tab is
+ * validated first, so a completion never writes into a tab with an invalid row.
+ */
+export function findRepairRow(
+  snapshot: RepairsSnapshot,
+  requestId: string,
+): RepairRowLookup {
+  if (
+    !Array.isArray(snapshot.repairs) ||
+    !hasExactHeader(snapshot.repairs[0], REPAIRS_HEADER)
+  ) {
+    return { ok: false, reason: "headers" };
+  }
+  if (!REPAIR_ID_PATTERN.test(requestId)) {
+    return { ok: false, reason: "not-found" };
+  }
+
+  const validation = validateRepairs(snapshot);
+  if (!validation.ok || validation.invalidRooms.size > 0) {
+    return { ok: false, reason: "invalid" };
+  }
+
+  let found: { ok: true; rowNumber: number; repair: RepairRow } | null = null;
+
+  for (let index = 1; index < snapshot.repairs.length; index += 1) {
+    const rawRow = snapshot.repairs[index];
+    if (!Array.isArray(rawRow)) return { ok: false, reason: "invalid" };
+    if (isBlankRow(rawRow)) continue;
+
+    const row = padRow(rawRow, REPAIRS_HEADER.length);
+    const repair = parseRepairRow(row);
+    if (!repair) return { ok: false, reason: "invalid" };
+    if (repair.requestId !== requestId) continue;
+
+    if (found) return { ok: false, reason: "duplicate" };
+    found = { ok: true, rowNumber: index + 1, repair };
+  }
+
+  return found ?? { ok: false, reason: "not-found" };
+}
+
 /**
  * Validates every row once, then projects only the requested room. Any invalid
  * row attributed to that room makes the whole room unavailable; other rooms and
@@ -429,7 +765,6 @@ export function buildRoomFeed(
   const errors = validation.invalidRooms.get(room);
   if (errors) {
     console.warn("[appfeed] room unavailable", {
-      room,
       invalidBillsRows: errors.bills,
       invalidLeasesRows: errors.leases,
     });

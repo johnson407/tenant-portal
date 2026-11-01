@@ -41,8 +41,8 @@ import {
   listPendingClaims,
   parseClaimInput,
   submitClaim,
-  todayInTaipei,
 } from "@/lib/appfeed/claims";
+import { todayInTaipei } from "@/lib/appfeed/dates";
 
 const NOW = new Date("2026-10-31T16:30:00.000Z"); // 2026-11-01 in Asia/Taipei
 

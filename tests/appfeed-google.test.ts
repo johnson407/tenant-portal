@@ -188,7 +188,7 @@ describe("wrong-file and header guards", () => {
     const metadataUrl = new URL(fetchMock.mock.calls[1][0] as string);
     expect(metadataUrl.pathname).toContain(`/spreadsheets/${SHEET_ID}`);
     expect(metadataUrl.searchParams.get("fields")).toBe(
-      "properties.title,sheets.properties.title",
+      "properties.title,sheets.properties.title,sheets.properties.hidden",
     );
 
     const valuesUrl = new URL(fetchMock.mock.calls[2][0] as string);

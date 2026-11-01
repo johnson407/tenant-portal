@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import PortalShell from "@/app/[lang]/portal-shell";
 import SectionCard from "@/app/[lang]/section-card";
 import { getRoomFeed } from "@/lib/appfeed/feed";
-import type { FeedResult } from "@/lib/appfeed/types";
+import { getRoomRepairs } from "@/lib/appfeed/repairs";
+import type { FeedResult, RoomRepairsResult } from "@/lib/appfeed/types";
 import { type BankAccount, getBankAccount } from "@/lib/bank-account";
 import { getDictionary, isLocale, localePath } from "@/lib/i18n";
 import { formatDate, formatDateTime, formatTwd } from "@/lib/i18n/format";
@@ -13,6 +14,7 @@ import { getRoomSessionVersion } from "@/lib/session-version";
 import { ROOM_UPPER, parseRoomLetter } from "@/lib/rooms";
 import { maskBankLast5 } from "@/lib/mask";
 import ClaimForm from "./claim-form";
+import RepairForm from "./repair-form";
 
 export const instant = false;
 
@@ -84,6 +86,13 @@ export default async function RoomPage({ params }: RoomPageProps) {
     bankAccount = await getBankAccount();
   } catch {
     bankAccount = null;
+  }
+
+  let repairsResult: RoomRepairsResult = { kind: "unavailable" };
+  try {
+    repairsResult = await getRoomRepairs(claims.room);
+  } catch {
+    repairsResult = { kind: "unavailable" };
   }
 
   const roomHeading = dictionary.room.headingTemplate.replace("{room}", ROOM_UPPER[room]);
@@ -293,6 +302,89 @@ export default async function RoomPage({ params }: RoomPageProps) {
             </section>
           )}
         </aside>
+      </div>
+
+      <div className="mt-6">
+        <SectionCard
+          title={dictionary.room.repairs.sectionHeading}
+          caption={dictionary.room.repairs.sectionCaption}
+        >
+          {repairsResult.kind !== "ok" ? (
+            <p className="rounded-md border border-dashed border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-300">
+              {dictionary.room.repairs.unavailable}
+            </p>
+          ) : (
+            <>
+              <RepairForm
+                locale={lang}
+                room={room}
+                labels={dictionary.room.repairs}
+              />
+              <div className="mt-4 border-t border-slate-800 pt-4">
+                {repairsResult.repairs.length === 0 ? (
+                  <p className="rounded-md border border-dashed border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-300">
+                    {dictionary.room.repairs.empty}
+                  </p>
+                ) : (
+                  <ul className="space-y-3">
+                    {repairsResult.repairs.map((repair) => (
+                      <li
+                        key={repair.requestId}
+                        className="rounded-md border border-slate-800 bg-slate-950/50 p-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <span className="font-medium text-slate-100">
+                            {
+                              dictionary.room.repairs.categories[
+                                repair.category
+                              ]
+                            }
+                          </span>
+                          <span
+                            className={
+                              repair.status === "pending"
+                                ? "rounded-full bg-amber-950 px-2.5 py-1 text-xs font-medium text-amber-200"
+                                : "rounded-full bg-emerald-950 px-2.5 py-1 text-xs font-medium text-emerald-200"
+                            }
+                          >
+                            {
+                              dictionary.room.repairs.history.status[
+                                repair.status
+                              ]
+                            }
+                          </span>
+                        </div>
+                        <p className="mt-2 break-words text-sm text-slate-200">
+                          {repair.note}
+                        </p>
+                        <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-800 pt-3 text-xs">
+                          <div className="flex gap-1">
+                            <dt className="text-slate-300">
+                              {dictionary.room.repairs.history.submittedOn}
+                            </dt>
+                            <dd className="font-mono text-slate-100">
+                              {formatDate(repair.submittedOn, lang)}
+                            </dd>
+                          </div>
+                          {repair.doneOn === null ? null : (
+                            <div className="flex gap-1">
+                              <dt className="text-slate-300">
+                                {dictionary.room.repairs.history.doneOn}
+                              </dt>
+                              <dd className="font-mono text-slate-100">
+                                {formatDate(repair.doneOn, lang)}
+                              </dd>
+                            </div>
+                          )}
+                        </dl>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
+        </SectionCard>
       </div>
     </PortalShell>
   );

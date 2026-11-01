@@ -7,15 +7,17 @@ it, and never share that file with the service account.
 ## File and tabs
 
 - Keep the file title exactly `AppFeed`.
-- Keep exactly two tabs: `Bills` and `Leases`. Remove every extra tab, including
-  hidden tabs.
+- Keep exactly these tabs: `Bills` and `Leases`, plus the optional `Repairs`
+  tab. No other tab is allowed. Remove hidden tabs.
 - Keep the `Bills` header row exactly:
   `room, period, rent, water, electricity, due_date, paid_on, claimed_on, bank_last5`
 - Keep the `Leases` header row exactly:
   `room, lease_start, lease_end, renewal_due`
+- Keep the `Repairs` header row exactly:
+  `room, request_id, category, note, submitted_on, status, done_on`
 - Do not rename, reorder, or insert columns. The app reads only these columns.
 
-## Cell rules
+## Bills and Leases cells
 
 - Store `room`, `period`, and every date as plain text, not as a Google date.
 - Use `YYYY-MM` for periods and `YYYY-MM-DD` for dates.
@@ -28,8 +30,8 @@ it, and never share that file with the service account.
   A row with `paid_on` moves to Payments.
 - `claimed_on` and `bank_last5` hold a tenant payment claim. The app writes them
   when a tenant reports a transfer. Leave both blank when there is no claim.
-- The app writes only columns `H` and `I` of an existing Bills row. It never
-  adds a row or changes the sheet structure.
+- A claim write changes only columns `H` and `I` of an existing Bills row. It
+  never adds a row or changes the sheet structure.
 - Set the `H` and `I` columns to plain text before tenants use the form. A
   leading zero in `bank_last5` is lost when Sheets treats the cell as a number.
 - Enter `claimed_on` as `YYYY-MM-DD`. Enter `bank_last5` as exactly five digits;
@@ -37,37 +39,80 @@ it, and never share that file with the service account.
 - To confirm a claim, enter the received date in `paid_on`. The claim leaves the
   admin list, and the bill moves to Payments.
 - Do not use formulas that reference the main rent file. Enter values only.
-- Do not add names, phone numbers, emails, ID numbers, addresses, LINE IDs,
-  notes, or deposit columns. Those fields do not exist in the schema.
+
+## Repairs cells
+
+- Set `Repairs!A:G` to plain text before tenants use the form. This keeps the
+  request ID and every date as text.
+- Use one row per repair request.
+- `room` holds `A` to `E`.
+- `request_id` holds 16 lowercase hex characters. The app generates it. Do not
+  edit it.
+- `category` holds one English key: `plumbing`, `electrical`, `appliance`, or
+  `other`. Do not enter a localized label.
+- `note` holds 1 to 200 printable characters. Do not use line breaks or tabs.
+  Do not enter an email address, a URL, or a run of seven or more digits.
+- Do not enter names, phone numbers, emails, ID numbers, addresses, LINE IDs, or
+  account numbers. The app rejects data it can detect, but it cannot detect
+  every name or written address.
+- `submitted_on` holds `YYYY-MM-DD`. The app writes it.
+- `status` holds `pending` or `done`.
+- `done_on` is blank for a pending request. It holds `YYYY-MM-DD` for a done
+  request. The app writes it.
+- When a tenant submits a request, the app appends one complete row to
+  `Repairs!A:G`. When an admin marks a request done, the app changes only
+  `F:G` of that row. It never changes `A:E`, deletes a row, or changes the
+  sheet structure.
+- Do not use formulas in the `Repairs` tab. Enter values only.
 
 ## Deploy order
 
-The two-column header and the app deploy depend on each other. Do these steps
-together:
+The app accepts two tab sets: `Bills` and `Leases`, or `Bills`, `Leases`, and
+`Repairs`. The current released app accepts only the two-tab set. Do these steps
+in order:
 
-1. Add `claimed_on` and `bank_last5` to `Bills!H1:I1` and set `H:I` to plain
-   text.
-2. Share `AppFeed` with the service account as **Editor**.
-3. Deploy the new app in the same change window.
+1. Confirm that `AppFeed` has the exact title, the `Bills` and `Leases` headers,
+   and a share to the service-account email as **Editor**. Fix any missing share
+   before the first dashboard read.
+2. Deploy the new app. Bills, payments, and lease work. The repair section shows
+   unavailable until the tab exists.
+3. Add the `Repairs` tab with the exact header above. Set `A:G` to plain text.
+4. Wait up to 15 minutes for the room repair cache to expire, or redeploy the
+   app. The cache can hold an unavailable result for this time.
+5. Open a room dashboard and submit a test request. Mark it done in the admin
+   console, then confirm the queue and the room history.
 
-Do not deploy the app before the header exists. Do not leave the header in place
-while the old app runs. Either mismatch makes every room show the unavailable
-state.
+Do not add the `Repairs` tab before the new app deploys. The current app rejects
+a third tab and makes every room unavailable.
 
-To roll back, remove `H1:I1` first, then deploy the previous app version. The old
-app rejects a nine-column header. Keep the claim cells until the rollback is
-complete, or copy them if the landlord needs the data.
+To roll back:
+
+1. Copy the `Repairs` tab if the landlord needs the request data.
+2. Remove the `Repairs` tab.
+3. Deploy the previous app version.
+
+Do not deploy the previous app while the `Repairs` tab exists. It rejects a
+third tab and makes every room unavailable.
 
 ## Sharing
 
 - Share only `AppFeed` with the service-account email as **Editor**. The write
-  scope lets the app update columns `H` and `I` in the `Bills` tab.
+  scope lets the app update claim cells in `Bills`, append repair rows, and
+  update the status cells in `Repairs`.
 - Never share the main rent file, a copy of it, or any other sheet with the
   service account.
 
 ## If a room shows unavailable
 
-The dashboard fails closed for the whole room when any row for that room is
-invalid. Other rooms are unaffected. Check that room's Bills and Leases rows
-against the rules above, fix the bad row, and wait for the next refresh (up to
-15 minutes) or restart the local server to clear the cache.
+A Bills or Leases row with an invalid value makes the whole room unavailable.
+Other rooms are unaffected. Check that room's Bills and Leases rows against the
+rules above, fix the bad row, and wait for the next refresh (up to 15 minutes)
+or restart the local server to clear the cache.
+
+An invalid `Repairs` row makes only that room's repair section unavailable. The
+bills, payments, and lease still show. The admin repair queue also becomes
+unavailable when any `Repairs` row is invalid. Fix the row, then wait for the
+next refresh.
+
+If the `Repairs` tab is missing, the repair section shows unavailable. It does
+not show an empty history.
