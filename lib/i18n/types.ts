@@ -42,6 +42,7 @@ export type Dictionary = {
     rent: string;
     water: string;
     electricity: string;
+    billBreakdownTemplate: string;
     total: string;
     lastUpdatedTemplate: string;
     unavailableHeading: string;

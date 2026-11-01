@@ -5,6 +5,13 @@ export type BillClaim = {
   bankLast5: string;
 };
 
+export type UtilityBreakdown = {
+  start: number;
+  end: number;
+  units: number;
+  rate: number;
+};
+
 export type FeedBill = {
   period: string;
   rent: number;
@@ -13,6 +20,8 @@ export type FeedBill = {
   total: number;
   dueDate: string;
   claim: BillClaim | null;
+  waterBreakdown: UtilityBreakdown | null;
+  electricityBreakdown: UtilityBreakdown | null;
 };
 
 export type PendingClaim = {

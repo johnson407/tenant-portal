@@ -11,6 +11,7 @@ import type {
   RepairsSnapshot,
   RepairStatus,
   RoomRepairsResult,
+  UtilityBreakdown,
 } from "./types";
 
 export const BILLS_HEADER = [
@@ -23,6 +24,12 @@ export const BILLS_HEADER = [
   "paid_on",
   "claimed_on",
   "bank_last5",
+  "water_start",
+  "water_end",
+  "water_rate",
+  "electricity_start",
+  "electricity_end",
+  "electricity_rate",
 ] as const;
 
 export const LEASES_HEADER = [
@@ -55,6 +62,7 @@ export const PERIOD_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 export const AMOUNT_PATTERN = /^\d{1,7}$/;
 export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export const BANK_LAST5_PATTERN = /^\d{5}$/;
+export const RATE_PATTERN = /^\d{1,4}(\.\d{1,4})?$/;
 export const REPAIR_ID_PATTERN = /^[0-9a-f]{16}$/;
 export const REPAIR_NOTE_MAX = 200;
 
@@ -69,6 +77,12 @@ export type ParsedAmount =
   | { ok: true; value: number | null }
   | { ok: false };
 
+export type MeterGroup = {
+  start: number;
+  end: number;
+  rate: number;
+};
+
 export type BillRow = {
   room: RoomLetter;
   period: string;
@@ -79,6 +93,8 @@ export type BillRow = {
   paidOn: string | null;
   claimedOn: string | null;
   bankLast5: string | null;
+  waterMeter: MeterGroup | null;
+  electricityMeter: MeterGroup | null;
 };
 
 type LeaseRow = {
@@ -170,6 +186,16 @@ function parseBillRow(row: unknown[]): BillRow | null {
   if (claimedOn !== null && !isRealIsoDate(claimedOn)) return null;
   if (bankLast5 !== null && !BANK_LAST5_PATTERN.test(bankLast5)) return null;
 
+  const waterMeter = parseMeterGroup(row[9], row[10], row[11], water.value);
+  if (!waterMeter.ok) return null;
+  const electricityMeter = parseMeterGroup(
+    row[12],
+    row[13],
+    row[14],
+    electricity.value,
+  );
+  if (!electricityMeter.ok) return null;
+
   return {
     room,
     period,
@@ -180,6 +206,8 @@ function parseBillRow(row: unknown[]): BillRow | null {
     paidOn,
     claimedOn,
     bankLast5,
+    waterMeter: waterMeter.value,
+    electricityMeter: electricityMeter.value,
   };
 }
 
@@ -287,6 +315,52 @@ export function parseWholeTwd(value: unknown, optional = false): ParsedAmount {
   const amount = Number(text);
   if (!Number.isSafeInteger(amount)) return { ok: false };
   return { ok: true, value: amount };
+}
+
+const RATE_SCALE = 10_000;
+
+/**
+ * Parses one utility meter group. All three cells blank means no breakdown. A
+ * complete group needs whole readings, a positive rate, an end not below the
+ * start, and a rounded cost equal to the bill amount.
+ */
+function parseMeterGroup(
+  startValue: unknown,
+  endValue: unknown,
+  rateValue: unknown,
+  amount: number | null,
+): { ok: true; value: MeterGroup | null } | { ok: false } {
+  const startText = cellText(startValue);
+  const endText = cellText(endValue);
+  const rateText = cellText(rateValue);
+
+  if (startText === "" && endText === "" && rateText === "") {
+    return { ok: true, value: null };
+  }
+  if (startText === "" || endText === "" || rateText === "") {
+    return { ok: false };
+  }
+  if (!RATE_PATTERN.test(rateText)) return { ok: false };
+
+  const start = parseWholeTwd(startText);
+  const end = parseWholeTwd(endText);
+  if (!start.ok || start.value === null || !end.ok || end.value === null) {
+    return { ok: false };
+  }
+  if (end.value < start.value) return { ok: false };
+
+  const rate = Number(rateText);
+  if (!Number.isFinite(rate) || rate <= 0) return { ok: false };
+  if (amount === null) return { ok: false };
+
+  const units = end.value - start.value;
+  const rateScaled = Math.round(rate * RATE_SCALE);
+  const expected = Math.floor(
+    (units * rateScaled + RATE_SCALE / 2) / RATE_SCALE,
+  );
+  if (expected !== amount) return { ok: false };
+
+  return { ok: true, value: { start: start.value, end: end.value, rate } };
 }
 
 /**
@@ -429,6 +503,16 @@ function validateSnapshot(snapshot: AppFeedSnapshot): Validation {
   return { ok: true, bills, leases, invalidRooms, droppedBills, droppedLeases };
 }
 
+function toBreakdown(meter: MeterGroup | null): UtilityBreakdown | null {
+  if (meter === null) return null;
+  return {
+    start: meter.start,
+    end: meter.end,
+    units: meter.end - meter.start,
+    rate: meter.rate,
+  };
+}
+
 function toFeedBill(bill: BillRow): FeedBill {
   return {
     period: bill.period,
@@ -441,6 +525,8 @@ function toFeedBill(bill: BillRow): FeedBill {
       bill.claimedOn !== null && bill.bankLast5 !== null
         ? { claimedOn: bill.claimedOn, bankLast5: bill.bankLast5 }
         : null,
+    waterBreakdown: toBreakdown(bill.waterMeter),
+    electricityBreakdown: toBreakdown(bill.electricityMeter),
   };
 }
 

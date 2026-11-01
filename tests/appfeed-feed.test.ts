@@ -42,6 +42,9 @@ function sentinelSnapshot(): AppFeedSnapshot {
       10 + index,
       `2026-12-${suffix}`,
       "",
+      "",
+      "",
+      ...(index === 0 ? ["5000", "5100", "10", "", "", ""] : ["", "", "", "", "", ""]),
     ]);
     bills.push([
       room,
@@ -97,6 +100,35 @@ describe("getRoomFeed", () => {
         );
       });
     }
+  });
+
+  it("projects a meter breakdown on an open bill and none on a payment", async () => {
+    const roomA = await getRoomFeed("a");
+    const roomB = await getRoomFeed("b");
+
+    expect(roomA.kind).toBe("ok");
+    expect(roomB.kind).toBe("ok");
+    if (roomA.kind !== "ok" || roomB.kind !== "ok") return;
+
+    expect(roomA.feed.openBills[0].waterBreakdown).toEqual({
+      start: 5000,
+      end: 5100,
+      units: 100,
+      rate: 10,
+    });
+    expect(roomA.feed.openBills[0].electricityBreakdown).toBeNull();
+    expect(roomB.feed.openBills[0].waterBreakdown).toBeNull();
+
+    expect(roomA.feed.payments[0]).toEqual({
+      period: "2025-01",
+      amount: 200000,
+      receivedOn: "2026-01-01",
+    });
+    expect(Object.keys(roomA.feed.payments[0])).toEqual([
+      "period",
+      "amount",
+      "receivedOn",
+    ]);
   });
 
   it("uses the configured cache profile and per-room tag", async () => {

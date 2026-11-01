@@ -159,8 +159,40 @@ describe("payment claim boundaries", () => {
     return {
       bills: [
         [...BILLS_HEADER],
-        ["a", "2026-11", 10000, "", "", "2026-11-05", "", CLAIMED_ON, bankLast5],
-        ["b", "2026-11", 20000, "", "", "2026-11-05", "", "", ""],
+        [
+          "a",
+          "2026-11",
+          10000,
+          "100",
+          "",
+          "2026-11-05",
+          "",
+          CLAIMED_ON,
+          bankLast5,
+          "1001",
+          "1011",
+          "10",
+          "",
+          "",
+          "",
+        ],
+        [
+          "b",
+          "2026-11",
+          20000,
+          "100",
+          "",
+          "2026-11-05",
+          "",
+          "",
+          "",
+          "2002",
+          "2012",
+          "10",
+          "",
+          "",
+          "",
+        ],
       ],
       leases: [
         [...LEASES_HEADER],
@@ -185,6 +217,35 @@ describe("payment claim boundaries", () => {
     expect(JSON.stringify(b)).not.toContain(CLAIM_SENTINEL);
     expect(JSON.stringify(b)).not.toContain(CLAIMED_ON);
     expect(b.feed.openBills[0].claim).toBeNull();
+  });
+
+  it("keeps room A meter readings out of room B's feed result", () => {
+    const snapshot = claimSnapshot();
+
+    const a = buildRoomFeed(snapshot, "a", "2026-11-01T00:00:00.000Z");
+    const b = buildRoomFeed(snapshot, "b", "2026-11-01T00:00:00.000Z");
+
+    expect(a.kind).toBe("ok");
+    expect(b.kind).toBe("ok");
+    if (a.kind !== "ok" || b.kind !== "ok") return;
+
+    expect(a.feed.openBills[0].waterBreakdown).toEqual({
+      start: 1001,
+      end: 1011,
+      units: 10,
+      rate: 10,
+    });
+    expect(b.feed.openBills[0].waterBreakdown).toEqual({
+      start: 2002,
+      end: 2012,
+      units: 10,
+      rate: 10,
+    });
+
+    expect(JSON.stringify(a)).not.toContain("2002");
+    expect(JSON.stringify(a)).not.toContain("2012");
+    expect(JSON.stringify(b)).not.toContain("1001");
+    expect(JSON.stringify(b)).not.toContain("1011");
   });
 
   it("projects a pending claim to the admin list only", () => {

@@ -8,7 +8,13 @@ import { getRoomRepairs } from "@/lib/appfeed/repairs";
 import type { FeedResult, RoomRepairsResult } from "@/lib/appfeed/types";
 import { type BankAccount, getBankAccount } from "@/lib/bank-account";
 import { getDictionary, isLocale, localePath } from "@/lib/i18n";
-import { formatDate, formatDateTime, formatTwd } from "@/lib/i18n/format";
+import {
+  formatCount,
+  formatDate,
+  formatDateTime,
+  formatRate,
+  formatTwd,
+} from "@/lib/i18n/format";
 import { getSessionClaims } from "@/lib/session-cookies";
 import { getRoomSessionVersion } from "@/lib/session-version";
 import { ROOM_UPPER, parseRoomLetter } from "@/lib/rooms";
@@ -215,24 +221,36 @@ export default async function RoomPage({ params }: RoomPageProps) {
                           key: "rent",
                           label: dictionary.room.rent,
                           value: bill.rent,
+                          breakdown: null,
                         },
                         {
                           key: "water",
                           label: dictionary.room.water,
                           value: bill.water,
+                          breakdown: bill.waterBreakdown,
                         },
                         {
                           key: "electricity",
                           label: dictionary.room.electricity,
                           value: bill.electricity,
+                          breakdown: bill.electricityBreakdown,
                         },
-                      ].map(({ key, label, value }) =>
+                      ].map(({ key, label, value, breakdown }) =>
                         value === null ? null : (
-                          <div key={key} className="flex gap-1">
+                          <div key={key} className="flex flex-wrap items-baseline gap-1">
                             <dt className="text-xs text-slate-300">{label}</dt>
                             <dd className="font-mono text-xs text-slate-100">
                               {formatTwd(value, lang)}
                             </dd>
+                            {breakdown == null ? null : (
+                              <dd className="w-full text-xs text-slate-300">
+                                {dictionary.room.billBreakdownTemplate
+                                  .replace("{start}", formatCount(breakdown.start, lang))
+                                  .replace("{end}", formatCount(breakdown.end, lang))
+                                  .replace("{units}", formatCount(breakdown.units, lang))
+                                  .replace("{rate}", formatRate(breakdown.rate, lang))}
+                              </dd>
+                            )}
                           </div>
                         ),
                       )}

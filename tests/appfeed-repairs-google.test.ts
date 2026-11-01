@@ -165,7 +165,7 @@ describe("optional Repairs tab", () => {
 
     const valuesUrl = new URL(fetchMock.mock.calls[2][0] as string);
     expect(valuesUrl.searchParams.getAll("ranges")).toEqual([
-      "Bills!A:I",
+      "Bills!A:O",
       "Leases!A:D",
     ]);
   });
@@ -180,7 +180,7 @@ describe("optional Repairs tab", () => {
     expect(result.kind).toBe("ok");
     const valuesUrl = new URL(fetchMock.mock.calls[2][0] as string);
     expect(valuesUrl.searchParams.getAll("ranges")).toEqual([
-      "Bills!A:I",
+      "Bills!A:O",
       "Leases!A:D",
     ]);
   });

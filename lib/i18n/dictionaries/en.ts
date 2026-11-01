@@ -44,6 +44,7 @@ const en: Dictionary = {
     rent: "Rent",
     water: "Water",
     electricity: "Electricity",
+    billBreakdownTemplate: "{start} - {end}: {units} x {rate}",
     total: "Total",
     lastUpdatedTemplate: "Last updated {date}",
     unavailableHeading: "Data temporarily unavailable",

@@ -44,6 +44,7 @@ const zhTW: Dictionary = {
     rent: "租金",
     water: "水費",
     electricity: "電費",
+    billBreakdownTemplate: "{start} - {end}：{units} 度 × {rate}",
     total: "合計",
     lastUpdatedTemplate: "最後更新 {date}",
     unavailableHeading: "資料暫時無法取得",

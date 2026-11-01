@@ -27,7 +27,23 @@ function makeSnapshot(
 }
 
 function validBill(overrides: Partial<Record<number, unknown>> = {}): unknown[] {
-  const row: unknown[] = ["a", "2026-10", "750", "", "", "2026-11-01", "", "", ""];
+  const row: unknown[] = [
+    "a",
+    "2026-10",
+    "750",
+    "",
+    "",
+    "2026-11-01",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+  ];
   for (const [index, value] of Object.entries(overrides)) {
     row[Number(index)] = value;
   }
@@ -62,6 +78,12 @@ describe("AppFeed constants", () => {
       "paid_on",
       "claimed_on",
       "bank_last5",
+      "water_start",
+      "water_end",
+      "water_rate",
+      "electricity_start",
+      "electricity_end",
+      "electricity_rate",
     ]);
     expect([...LEASES_HEADER]).toEqual([
       "room",
@@ -140,6 +162,8 @@ describe("Bills validation", () => {
       total: 900,
       dueDate: "2026-11-01",
       claim: null,
+      waterBreakdown: null,
+      electricityBreakdown: null,
     });
   });
 
@@ -155,6 +179,122 @@ describe("Bills validation", () => {
       electricity: 0,
       total: 750,
     });
+  });
+
+  it("projects a complete water meter group and its units", () => {
+    const result = feedFor(
+      makeSnapshot([
+        validBill({ 3: "100", 9: "1200", 10: "1220", 11: "5" }),
+      ]),
+    );
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.feed.openBills[0].waterBreakdown).toEqual({
+      start: 1200,
+      end: 1220,
+      units: 20,
+      rate: 5,
+    });
+    expect(result.feed.openBills[0].electricityBreakdown).toBeNull();
+  });
+
+  it("projects a complete electricity group with a fractional rate", () => {
+    const result = feedFor(
+      makeSnapshot([
+        validBill({ 4: "110", 12: "3000", 13: "3020", 14: "5.5" }),
+      ]),
+    );
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.feed.openBills[0].electricityBreakdown).toEqual({
+      start: 3000,
+      end: 3020,
+      units: 20,
+      rate: 5.5,
+    });
+  });
+
+  it("accepts an exact product and a zero-unit group", () => {
+    const result = feedFor(
+      makeSnapshot([
+        validBill({ 3: "0", 9: "1200", 10: "1200", 11: "5" }),
+        validBill({
+          1: "2026-11",
+          3: "145",
+          9: "100",
+          10: "120",
+          11: "7.25",
+        }),
+      ]),
+    );
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.feed.openBills[0].waterBreakdown).toEqual({
+      start: 1200,
+      end: 1200,
+      units: 0,
+      rate: 5,
+    });
+    expect(result.feed.openBills[1].waterBreakdown).toEqual({
+      start: 100,
+      end: 120,
+      units: 20,
+      rate: 7.25,
+    });
+  });
+
+  it("accepts a half-up rounded product", () => {
+    // 33 units x NT$2.6253 = 86.6349, rounded half up to NT$87.
+    const result = feedFor(
+      makeSnapshot([validBill({ 3: "87", 9: "100", 10: "133", 11: "2.6253" })]),
+    );
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.feed.openBills[0].waterBreakdown).toEqual({
+      start: 100,
+      end: 133,
+      units: 33,
+      rate: 2.6253,
+    });
+  });
+
+  it("rounds an exact half up to the next NT$", () => {
+    const result = feedFor(
+      makeSnapshot([validBill({ 3: "3", 9: "0", 10: "5", 11: "0.50" })]),
+    );
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.feed.openBills[0].waterBreakdown).toEqual({
+      start: 0,
+      end: 5,
+      units: 5,
+      rate: 0.5,
+    });
+  });
+
+  it.each([
+    [
+      "a half rounded down to the wrong amount",
+      { 3: "2", 9: "0", 10: "5", 11: "0.50" },
+    ],
+    ["a partial water group", { 3: "100", 9: "1200", 10: "1220" }],
+    ["a partial electricity group", { 4: "100", 12: "3000", 13: "3020" }],
+    ["a group with a blank amount", { 9: "1200", 10: "1220", 11: "5" }],
+    ["a zero rate", { 3: "0", 9: "1200", 10: "1220", 11: "0" }],
+    ["an end below the start", { 3: "100", 9: "1220", 10: "1200", 11: "5" }],
+    ["a fractional reading", { 3: "100", 9: "1200.5", 10: "1220", 11: "5" }],
+    ["a rate with five decimals", { 3: "100", 9: "1200", 10: "1220", 11: "5.00001" }],
+    ["a rate above four integer digits", { 3: "100", 9: "1200", 10: "1220", 11: "10000" }],
+    ["a one-NT$ mismatch", { 3: "100", 9: "1200", 10: "1220", 11: "5.5" }],
+  ])("fails the whole room closed for %s", (_label, overrides) => {
+    const result = feedFor(makeSnapshot([validBill(overrides)]));
+
+    expect(result).toEqual({ kind: "unavailable" });
   });
 
   it("projects a pending claim on an open bill", () => {

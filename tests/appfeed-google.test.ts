@@ -45,10 +45,26 @@ function valuesResponse(
   return jsonResponse({
     valueRanges: [
       {
-        range: "Bills!A1:I2",
+        range: "Bills!A1:O2",
         values: [
           [...billsHeader],
-          ["a", "2026-10", 750, "", "", "2026-11-01", "", "", ""],
+          [
+            "a",
+            "2026-10",
+            750,
+            "",
+            "",
+            "2026-11-01",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+          ],
         ],
       },
       {
@@ -194,7 +210,7 @@ describe("wrong-file and header guards", () => {
     const valuesUrl = new URL(fetchMock.mock.calls[2][0] as string);
     expect(valuesUrl.pathname).toContain(`/spreadsheets/${SHEET_ID}/values:batchGet`);
     expect(valuesUrl.searchParams.getAll("ranges")).toEqual([
-      "Bills!A:I",
+      "Bills!A:O",
       "Leases!A:D",
     ]);
     expect(valuesUrl.searchParams.get("majorDimension")).toBe("ROWS");
@@ -247,7 +263,17 @@ describe("wrong-file and header guards", () => {
       .mockResolvedValueOnce(jsonResponse({ access_token: "token", expires_in: 3600 }))
       .mockResolvedValueOnce(metadataResponse())
       .mockResolvedValueOnce(
-        valuesResponse(["room", "period", "rent", "water", "electricity", "due", "paid_on"]),
+        valuesResponse([
+          "room",
+          "period",
+          "rent",
+          "water",
+          "electricity",
+          "due_date",
+          "paid_on",
+          "claimed_on",
+          "bank_last5",
+        ]),
       );
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -287,7 +313,7 @@ describe("wrong-file and header guards", () => {
         jsonResponse({
           valueRanges: [
             { range: "Leases!A1:D1", values: [[...LEASES_HEADER]] },
-            { range: "Bills!A1:I1", values: [[...BILLS_HEADER]] },
+            { range: "Bills!A1:O1", values: [[...BILLS_HEADER]] },
           ],
         }),
       );

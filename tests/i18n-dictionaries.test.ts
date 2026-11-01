@@ -38,6 +38,20 @@ describe("dictionaries", () => {
     expect(englishStrings.some((value) => /[\u3400-\u9fff]/.test(value))).toBe(false);
   });
 
+  it("gives the bill breakdown template all four placeholders", () => {
+    for (const template of [
+      en.room.billBreakdownTemplate,
+      zhTW.room.billBreakdownTemplate,
+    ]) {
+      for (const placeholder of ["{start}", "{end}", "{units}", "{rate}"]) {
+        expect(template).toContain(placeholder);
+      }
+    }
+
+    expect(zhTW.room.billBreakdownTemplate).toMatch(/[\u3400-\u9fff]/);
+    expect(en.room.billBreakdownTemplate).not.toMatch(/[\u3400-\u9fff]/);
+  });
+
   it("keeps the language switcher pointed at the other locale", () => {
     expect(zhTW.common.switchLocale).toBe("English");
     expect(en.common.switchLocale).toBe("繁體中文");

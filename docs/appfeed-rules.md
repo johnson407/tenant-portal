@@ -10,7 +10,7 @@ it, and never share that file with the service account.
 - Keep exactly these tabs: `Bills` and `Leases`, plus the optional `Repairs`
   tab. No other tab is allowed. Remove hidden tabs.
 - Keep the `Bills` header row exactly:
-  `room, period, rent, water, electricity, due_date, paid_on, claimed_on, bank_last5`
+  `room, period, rent, water, electricity, due_date, paid_on, claimed_on, bank_last5, water_start, water_end, water_rate, electricity_start, electricity_end, electricity_rate`
 - Keep the `Leases` header row exactly:
   `room, lease_start, lease_end, renewal_due`
 - Keep the `Repairs` header row exactly:
@@ -40,6 +40,32 @@ it, and never share that file with the service account.
   admin list, and the bill moves to Payments.
 - Do not use formulas that reference the main rent file. Enter values only.
 
+## Meter readings
+
+- Columns `J` to `O` hold the optional water and electricity breakdown. Set
+  `Bills!J:O` to plain text before the landlord enters values.
+- Leave all three cells of a utility blank when the bill has no breakdown. Old
+  rows with blank `J:O` stay valid.
+- Enter a group in full or leave it blank. The water group is `water_start`,
+  `water_end`, and `water_rate`. The electricity group is `electricity_start`,
+  `electricity_end`, and `electricity_rate`. A partial group makes the room
+  unavailable.
+- Enter readings as whole numbers from 0 to 9,999,999. Enter a rate as NT$ per
+  unit with up to four decimal places, for example `8.5`. The rate must be above
+  zero.
+- The end reading must be equal to or above the start reading. The units are
+  `end - start`.
+- The app checks the amount. It multiplies the units by the rate and rounds half
+  up to a whole NT$. The result must equal the water or electricity amount. For
+  example, 5 units at NT$0.50 is NT$2.50, which rounds up to NT$3. Also, 33
+  units at NT$2.6253 is 86.6349, so the amount must be NT$87.
+- A group with a blank amount is invalid. A bill with no group is still valid.
+- Leave the group blank when the bill uses a fixed fee, a minimum charge, or a
+  tiered rate. The app cannot show that breakdown.
+- A paid bill can keep its group. The app shows the breakdown only on open
+  bills.
+- Do not use formulas in `J:O`. Enter values only.
+
 ## Repairs cells
 
 - Set `Repairs!A:G` to plain text before tenants use the form. This keeps the
@@ -65,7 +91,34 @@ it, and never share that file with the service account.
   sheet structure.
 - Do not use formulas in the `Repairs` tab. Enter values only.
 
-## Deploy order
+## Meter reading deploy order
+
+The current released app reads only `Bills!A:I`. It ignores `J:O`, so the sheet
+can hold the new headers before the new app deploys. Do these steps in order:
+
+1. Add the six new names to `Bills!J1:O1`, in this order: `water_start`,
+   `water_end`, `water_rate`, `electricity_start`, `electricity_end`,
+   `electricity_rate`.
+2. Set `Bills!J:O` to plain text.
+3. Open a room dashboard on the released app and confirm that the room still
+   shows its bills. The released app reads only `Bills!A:I`.
+4. Deploy the new app.
+5. Fill one test bill with a water or electricity group. Open that room and
+   confirm the breakdown line under the amount.
+6. Fill the other old rows over time. A blank group stays valid.
+
+Never insert the new columns before `bank_last5`, and never reorder the header.
+
+To roll back:
+
+1. Deploy the previous app version.
+2. Leave `Bills!J:O` in place. The previous app ignores these columns, so no
+   sheet edit is necessary.
+
+## Repairs deploy order
+
+Do the meter reading steps above first. The new app requires all fifteen `Bills`
+headers, so it fails on a sheet without `J:O`.
 
 The app accepts two tab sets: `Bills` and `Leases`, or `Bills`, `Leases`, and
 `Repairs`. The current released app accepts only the two-tab set. Do these steps

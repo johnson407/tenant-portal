@@ -49,6 +49,8 @@ const FEED_A: RoomFeed = {
       total: 900,
       dueDate: "2026-11-01",
       claim: null,
+      waterBreakdown: { start: 1000, end: 1010, units: 10, rate: 10 },
+      electricityBreakdown: { start: 2000, end: 2010, units: 10, rate: 5 },
     },
   ],
   payments: [
@@ -73,6 +75,8 @@ const FEED_B: RoomFeed = {
       total: 800,
       dueDate: "2026-12-01",
       claim: null,
+      waterBreakdown: null,
+      electricityBreakdown: null,
     },
   ],
   payments: [],
@@ -287,6 +291,45 @@ describe("room dashboard layout", () => {
     expect(english).toMatch(
       /<span class="[^"]*rounded-full[^"]*bg-amber-950[^"]*">open<\/span>/,
     );
+  });
+});
+
+describe("room dashboard meter breakdown", () => {
+  it("shows the water meter breakdown under the amount in zh-TW", async () => {
+    const html = await renderRoom("a");
+
+    expect(html).toContain("1,000 - 1,010：10 度 × $10");
+    expect(html).toContain("2,000 - 2,010：10 度 × $5");
+  });
+
+  it("shows the water meter breakdown under the amount in English", async () => {
+    const html = await renderRoom("a", "en");
+
+    expect(html).toContain("1,000 - 1,010: 10 x NT$10");
+    expect(html).toContain("2,000 - 2,010: 10 x NT$5");
+  });
+
+  it("shows no breakdown line for a bill with a blank group", async () => {
+    mocks.getSessionClaims.mockResolvedValue({
+      role: "tenant",
+      room: "b",
+      v: 1,
+      exp: 1,
+    });
+    mocks.getRoomSessionVersion.mockResolvedValue(1);
+    mocks.getRoomFeed.mockResolvedValue({ kind: "ok", feed: FEED_B });
+
+    const html = await renderRoom("b", "en");
+
+    expect(html).not.toMatch(/\d[\d,]* - \d[\d,]*[：:]/);
+  });
+
+  it("keeps meter readings out of the payment disclosure", async () => {
+    const html = await renderRoom("a", "en");
+    const details = html.match(/<details[^>]*>[\s\S]*<\/details>/)?.[0] ?? "";
+
+    expect(details).toContain("Period 2026-09");
+    expect(details).not.toMatch(/\d[\d,]* - \d[\d,]*[：:]/);
   });
 });
 

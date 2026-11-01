@@ -15,6 +15,26 @@ const twdFormatters: Record<Locale, Intl.NumberFormat> = {
   }),
 };
 
+const countFormatters: Record<Locale, Intl.NumberFormat> = {
+  en: new Intl.NumberFormat("en", { maximumFractionDigits: 0 }),
+  "zh-TW": new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 0 }),
+};
+
+const rateFormatters: Record<Locale, Intl.NumberFormat> = {
+  en: new Intl.NumberFormat("en", {
+    style: "currency",
+    currency: "TWD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  }),
+  "zh-TW": new Intl.NumberFormat("zh-TW", {
+    style: "currency",
+    currency: "TWD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  }),
+};
+
 const dateFormatters: Record<Locale, Intl.DateTimeFormat> = {
   en: new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }),
   "zh-TW": new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeZone: "UTC" }),
@@ -36,6 +56,16 @@ const dateTimeFormatters: Record<Locale, Intl.DateTimeFormat> = {
 /** Formats whole New Taiwan dollars for the active locale. */
 export function formatTwd(amountDollars: number, locale: Locale): string {
   return twdFormatters[locale].format(amountDollars);
+}
+
+/** Formats a whole meter reading or unit count with grouping. */
+export function formatCount(count: number, locale: Locale): string {
+  return countFormatters[locale].format(count);
+}
+
+/** Formats an NT$ price per unit with up to four fraction digits. */
+export function formatRate(rate: number, locale: Locale): string {
+  return rateFormatters[locale].format(rate);
 }
 
 /**
