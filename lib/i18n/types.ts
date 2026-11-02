@@ -108,8 +108,11 @@ export type Dictionary = {
       history: {
         submittedOn: string;
         doneOn: string;
+        visitTime: string;
         status: {
           pending: string;
+          scheduled: string;
+          in_progress: string;
           done: string;
         };
       };
@@ -209,14 +212,31 @@ export type Dictionary = {
     repairs: {
       sectionHeading: string;
       empty: string;
+      emptyActive: string;
+      emptyCompleted: string;
       unavailable: string;
       room: string;
       category: string;
       note: string;
       submittedOn: string;
       status: string;
+      visitStart: string;
+      visitEnd: string;
+      active: string;
+      completed: string;
       pending: string;
+      scheduled: string;
+      inProgress: string;
       done: string;
+      doneOn: string;
+      saveStatus: string;
+      savingStatus: string;
+      statusSaved: string;
+      expenseLabel: string;
+      saveExpense: string;
+      savingExpense: string;
+      expenseTotal: string;
+      expenseSaved: string;
       markDone: string;
       marking: string;
       noteLabel: string;
@@ -225,6 +245,10 @@ export type Dictionary = {
         alreadyDone: string;
         notFound: string;
         invalidNote: string;
+        invalidStatus: string;
+        invalidWindow: string;
+        invalidAmount: string;
+        notDone: string;
         unavailable: string;
         rate: string;
         generic: string;

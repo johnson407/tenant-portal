@@ -48,6 +48,12 @@ export const REPAIR_DONE_RATE_BUCKET: RateBucket = {
   windowSeconds: 15 * 60,
 };
 
+export const REPAIR_ADMIN_UPDATE_RATE_BUCKET: RateBucket = {
+  prefix: "ratelimit:repair-admin-update",
+  maxAttempts: 60,
+  windowSeconds: 15 * 60,
+};
+
 export type RateLimitDecision = {
   allowed: boolean;
   retryAfterSeconds: number | null;

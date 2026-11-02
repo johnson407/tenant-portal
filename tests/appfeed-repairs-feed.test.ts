@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
   fetchRepairsSnapshot: vi.fn(),
   appendRepairRow: vi.fn(),
   writeRepairDone: vi.fn(),
-  acquireRepairDoneLock: vi.fn(),
+  writeRepairExpense: vi.fn(),
+  writeRepairStatusAndVisit: vi.fn(),
+  acquireRepairLock: vi.fn(),
   todayInTaipei: vi.fn(),
 }));
 
@@ -39,6 +41,8 @@ vi.mock("@/lib/appfeed/google", () => ({
   fetchRepairsSnapshot: mocks.fetchRepairsSnapshot,
   appendRepairRow: mocks.appendRepairRow,
   writeRepairDone: mocks.writeRepairDone,
+  writeRepairExpense: mocks.writeRepairExpense,
+  writeRepairStatusAndVisit: mocks.writeRepairStatusAndVisit,
 }));
 
 vi.mock("@/lib/appfeed/dates", async (importOriginal) => {
@@ -47,7 +51,7 @@ vi.mock("@/lib/appfeed/dates", async (importOriginal) => {
 });
 
 vi.mock("@/lib/appfeed/repair-lock", () => ({
-  acquireRepairDoneLock: mocks.acquireRepairDoneLock,
+  acquireRepairLock: mocks.acquireRepairLock,
 }));
 
 vi.mock("@/lib/appfeed/feed", () => {
@@ -64,6 +68,7 @@ const {
   completeRepair,
   getRoomRepairs,
   listPendingRepairs,
+  listAdminRepairs,
   parseRepairInput,
   submitRepair,
 } = await import("@/lib/appfeed/repairs");
@@ -111,7 +116,7 @@ beforeEach(() => {
   });
   mocks.appendRepairRow.mockResolvedValue({ kind: "ok" });
   mocks.writeRepairDone.mockResolvedValue({ kind: "ok" });
-  mocks.acquireRepairDoneLock.mockResolvedValue(async () => {});
+  mocks.acquireRepairLock.mockResolvedValue(async () => {});
 });
 
 describe("getRoomRepairs", () => {
@@ -306,6 +311,47 @@ describe("listPendingRepairs", () => {
     await expect(listPendingRepairs()).resolves.toEqual({
       kind: "unavailable",
     });
+  });
+});
+
+describe("listAdminRepairs", () => {
+  it("denies a tenant before reading", async () => {
+    mocks.isAdminSession.mockResolvedValue(false);
+    await expect(listAdminRepairs()).resolves.toEqual({ kind: "denied" });
+    expect(mocks.fetchRepairsSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("returns all repairs and a fresh expense total", async () => {
+    mocks.fetchRepairsSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: makeSnapshot([
+        validRepair({ 5: "done", 6: "2026-10-31", 10: "0" }),
+        validRepair({ 0: "b", 1: OTHER_ID, 5: "done", 6: "2026-11-01", 10: "1250" }),
+      ]),
+    });
+
+    await expect(listAdminRepairs()).resolves.toMatchObject({
+      kind: "ok",
+      expenseTotal: 1250,
+      repairs: [
+        { room: "b", status: "done", expenseAmount: 1250 },
+        { room: "a", status: "done", expenseAmount: 0 },
+      ],
+    });
+    expect(mocks.fetchRepairsSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns unavailable instead of a partial total for invalid rows", async () => {
+    mocks.fetchRepairsSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: makeSnapshot([
+        validRepair({ 5: "done", 6: "2026-10-31", 10: "100" }),
+        validRepair({ 0: "b", 1: OTHER_ID, 3: "Contact jane@example.com" }),
+      ]),
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(listAdminRepairs()).resolves.toEqual({ kind: "unavailable" });
   });
 });
 
@@ -543,8 +589,36 @@ describe("completeRepair", () => {
     );
   });
 
+  it("marks a scheduled request done", async () => {
+    mocks.fetchRepairsSnapshot
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: makeSnapshot([
+          validRepair({
+            5: "scheduled",
+            8: "2026-11-04T09:00+08:00",
+            9: "2026-11-04T12:00+08:00",
+          }),
+        ]),
+      })
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: makeSnapshot([
+          validRepair({
+            5: "done",
+            6: "2026-11-01",
+            8: "2026-11-04T09:00+08:00",
+            9: "2026-11-04T12:00+08:00",
+          }),
+        ]),
+      });
+
+    await expect(completeRepair(REQUEST_ID)).resolves.toEqual({ kind: "ok" });
+    expect(mocks.writeRepairDone).toHaveBeenCalledWith(2, "2026-11-01", "");
+  });
+
   it("rejects a concurrent completion before the second write", async () => {
-    mocks.acquireRepairDoneLock.mockResolvedValue(null);
+    mocks.acquireRepairLock.mockResolvedValue(null);
 
     const result = await completeRepair(REQUEST_ID);
 
@@ -554,7 +628,7 @@ describe("completeRepair", () => {
   });
 
   it("fails closed when the completion lock store is unavailable", async () => {
-    mocks.acquireRepairDoneLock.mockRejectedValue(
+    mocks.acquireRepairLock.mockRejectedValue(
       new Error("KV store is not configured"),
     );
 
@@ -567,7 +641,7 @@ describe("completeRepair", () => {
 
   it("releases the completion lock after a successful write", async () => {
     const release = vi.fn().mockResolvedValue(undefined);
-    mocks.acquireRepairDoneLock.mockResolvedValue(release);
+    mocks.acquireRepairLock.mockResolvedValue(release);
     mockCompletionReads();
 
     const result = await completeRepair(REQUEST_ID);
@@ -578,7 +652,7 @@ describe("completeRepair", () => {
 
   it("releases the completion lock after a rejected write", async () => {
     const release = vi.fn().mockResolvedValue(undefined);
-    mocks.acquireRepairDoneLock.mockResolvedValue(release);
+    mocks.acquireRepairLock.mockResolvedValue(release);
     mocks.writeRepairDone.mockResolvedValue({
       kind: "unavailable",
       reason: "server",

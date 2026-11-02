@@ -98,6 +98,8 @@ const REPAIR_PENDING: RoomRepair = {
   note: "Leaking tap in the bathroom",
   submittedOn: "2026-10-30",
   status: "pending",
+  visitStart: null,
+  visitEnd: null,
   doneOn: null,
 };
 
@@ -107,6 +109,8 @@ const REPAIR_DONE: RoomRepair = {
   note: "Fixed light in the kitchen",
   submittedOn: "2026-10-20",
   status: "done",
+  visitStart: null,
+  visitEnd: null,
   doneOn: "2026-10-25",
 };
 
@@ -842,6 +846,30 @@ describe("room dashboard repairs", () => {
     expect(html).toContain("Done");
     expect(html).toContain("Oct 30, 2026");
     expect(html).toContain("Oct 25, 2026");
+  });
+
+  it("shows the scheduled status and visit window in the active locale", async () => {
+    mocks.getRoomRepairs.mockResolvedValue({
+      kind: "ok",
+      repairs: [
+        {
+          ...REPAIR_PENDING,
+          status: "scheduled",
+          visitStart: "2026-11-04T09:00+08:00",
+          visitEnd: "2026-11-04T12:00+08:00",
+        },
+      ],
+      lastDone: null,
+    });
+
+    const en = await renderRoom("a", "en");
+    expect(en).toContain("Scheduled");
+    expect(en).toContain("Planned visit");
+    expect(en).toContain("Nov 4, 2026");
+
+    const zh = await renderRoom("a");
+    expect(zh).toContain("已安排");
+    expect(zh).toContain("預計到訪時間");
   });
 
   it("keeps the form and shows the empty state when there are no requests", async () => {

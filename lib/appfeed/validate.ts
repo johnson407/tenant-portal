@@ -2,6 +2,7 @@ import { isRoomLetter, type RoomLetter } from "../rooms";
 import { isRenewalReminderDue } from "./dates";
 import type {
   AppFeedSnapshot,
+  AdminRepair,
   FeedBill,
   LeaseRenewal,
   FeedLease,
@@ -52,9 +53,12 @@ export const REPAIRS_HEADER = [
   "status",
   "done_on",
   "done_note",
+  "visit_start",
+  "visit_end",
+  "expense_amount",
 ] as const;
 
-export const REPAIRS_RANGE = "Repairs!A:H";
+export const REPAIRS_RANGE = "Repairs!A:K";
 
 export const REPAIR_CATEGORIES = [
   "plumbing",
@@ -69,6 +73,9 @@ export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export const BANK_LAST5_PATTERN = /^\d{5}$/;
 export const RATE_PATTERN = /^\d{1,4}(\.\d{1,4})?$/;
 export const REPAIR_ID_PATTERN = /^[0-9a-f]{16}$/;
+export const EXPENSE_AMOUNT_PATTERN = /^\d+$/;
+export const TAIPEI_DATE_TIME_PATTERN =
+  /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d\+08:00$/;
 export const REPAIR_NOTE_MAX = 200;
 
 const CONTROL_CHARACTER_PATTERN =
@@ -120,6 +127,9 @@ export type RepairRow = {
   status: RepairStatus;
   doneOn: string | null;
   doneNote: string | null;
+  visitStart: string | null;
+  visitEnd: string | null;
+  expenseAmount: number | null;
 };
 
 type RoomErrorCounts = { bills: number; leases: number };
@@ -238,6 +248,20 @@ export function isRepairCategory(value: string): value is RepairCategory {
   return (REPAIR_CATEGORIES as readonly string[]).includes(value);
 }
 
+function isRepairStatus(value: string): value is RepairStatus {
+  return (
+    value === "pending" ||
+    value === "scheduled" ||
+    value === "in_progress" ||
+    value === "done"
+  );
+}
+
+export function isValidTaipeiDateTime(value: string): boolean {
+  const match = TAIPEI_DATE_TIME_PATTERN.exec(value);
+  return match !== null && isRealIsoDate(match[1]);
+}
+
 /**
  * Checks a trimmed note. The note must be printable, short, and free of the
  * personal data that the system can detect: emails, URLs, and long digit runs.
@@ -289,23 +313,53 @@ export function parseRepairRow(row: unknown[]): RepairRow | null {
   const submittedOn = cellText(row[4]);
   if (!isRealIsoDate(submittedOn)) return null;
 
-  const status = cellText(row[5]);
-  if (status !== "pending" && status !== "done") return null;
+  const statusText = cellText(row[5]);
+  if (!isRepairStatus(statusText)) return null;
+  const status = statusText;
 
   const doneOnText = cellText(row[6]);
   const doneOn = doneOnText === "" ? null : doneOnText;
   const doneNoteText = cellText(row[7]);
   const doneNote = doneNoteText === "" ? null : doneNoteText;
+  const visitStartText = cellText(row[8]);
+  const visitEndText = cellText(row[9]);
+  const visitStart = visitStartText === "" ? null : visitStartText;
+  const visitEnd = visitEndText === "" ? null : visitEndText;
+  const expenseText = cellText(row[10]);
+  let expenseAmount: number | null = null;
+
+  if (expenseText !== "") {
+    if (!EXPENSE_AMOUNT_PATTERN.test(expenseText)) return null;
+    const parsedExpense = Number(expenseText);
+    if (!Number.isSafeInteger(parsedExpense)) return null;
+    expenseAmount = parsedExpense;
+  }
 
   if (doneNote !== null && !isValidNote(doneNote)) return null;
 
-  if (status === "pending") {
-    if (doneOn !== null || doneNote !== null) return null;
+  if (status !== "done") {
+    if (doneOn !== null || doneNote !== null || expenseAmount !== null) {
+      return null;
+    }
   } else if (
     doneOn === null ||
     !isRealIsoDate(doneOn) ||
     doneOn < submittedOn
   ) {
+    return null;
+  }
+
+  if ((visitStart === null) !== (visitEnd === null)) return null;
+  if (visitStart !== null && visitEnd !== null) {
+    if (
+      !isValidTaipeiDateTime(visitStart) ||
+      !isValidTaipeiDateTime(visitEnd) ||
+      visitEnd <= visitStart
+    ) {
+      return null;
+    }
+  }
+  if (status === "scheduled" && (visitStart === null || visitEnd === null)) {
     return null;
   }
 
@@ -318,6 +372,9 @@ export function parseRepairRow(row: unknown[]): RepairRow | null {
     status,
     doneOn,
     doneNote,
+    visitStart,
+    visitEnd,
+    expenseAmount,
   };
 }
 
@@ -772,7 +829,7 @@ export function validateRepairs(snapshot: RepairsSnapshot): RepairValidation {
 }
 
 /**
- * Projects one room's repairs. Pending requests come first, newest first, so a
+ * Projects one room's repairs. Active requests come first, newest first, so a
  * just-submitted request stays visible when the history is full. Done requests
  * follow, newest done first. The result holds at most 20 requests.
  */
@@ -812,8 +869,10 @@ export function buildRoomRepairs(
 
   const repairs = roomRepairs
     .sort((a, b) => {
-      if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
-      if (a.status === "pending") {
+      const aDone = a.status === "done";
+      const bDone = b.status === "done";
+      if (aDone !== bDone) return aDone ? 1 : -1;
+      if (!aDone) {
         return (
           b.submittedOn.localeCompare(a.submittedOn) ||
           b.requestId.localeCompare(a.requestId)
@@ -826,12 +885,14 @@ export function buildRoomRepairs(
       );
     })
     .slice(0, 20)
-    .map(({ requestId, category, note, submittedOn, status, doneOn }) => ({
+    .map(({ requestId, category, note, submittedOn, status, visitStart, visitEnd, doneOn }) => ({
       requestId,
       category,
       note,
       submittedOn,
       status,
+      visitStart,
+      visitEnd,
       doneOn,
     }));
 
@@ -871,6 +932,61 @@ export function buildPendingRepairs(
       note,
       submittedOn,
     }));
+}
+
+/** Projects all repairs for the admin and sums recorded expenses. */
+export function buildAdminRepairs(
+  snapshot: RepairsSnapshot,
+): { repairs: AdminRepair[]; expenseTotal: number } | null {
+  const validation = validateRepairs(snapshot);
+  if (
+    !validation.ok ||
+    validation.invalidRooms.size > 0 ||
+    validation.droppedRepairs > 0
+  ) {
+    return null;
+  }
+
+  let expenseTotal = 0;
+  for (const repair of validation.repairs) {
+    if (repair.expenseAmount === null) continue;
+    expenseTotal += repair.expenseAmount;
+    if (!Number.isSafeInteger(expenseTotal)) return null;
+  }
+
+  const repairs = validation.repairs
+    .slice()
+    .sort((a, b) => {
+      if ((a.status === "done") !== (b.status === "done")) {
+        return a.status === "done" ? 1 : -1;
+      }
+      if (a.status === "done") {
+        return (
+          (b.doneOn ?? "").localeCompare(a.doneOn ?? "") ||
+          b.submittedOn.localeCompare(a.submittedOn) ||
+          a.room.localeCompare(b.room)
+        );
+      }
+      return (
+        a.submittedOn.localeCompare(b.submittedOn) ||
+        a.room.localeCompare(b.room) ||
+        a.requestId.localeCompare(b.requestId)
+      );
+    })
+    .map((repair) => ({
+      room: repair.room,
+      requestId: repair.requestId,
+      category: repair.category,
+      note: repair.note,
+      submittedOn: repair.submittedOn,
+      status: repair.status,
+      visitStart: repair.visitStart,
+      visitEnd: repair.visitEnd,
+      doneOn: repair.doneOn,
+      expenseAmount: repair.expenseAmount,
+    }));
+
+  return { repairs, expenseTotal };
 }
 
 export type RepairRowLookup =

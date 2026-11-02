@@ -6,11 +6,13 @@ import { clientIpFromHeaders } from "../client-ip";
 import { isAdminSession } from "../session-cookies";
 import {
   REPAIR_DONE_RATE_BUCKET,
+  REPAIR_ADMIN_UPDATE_RATE_BUCKET,
   REPAIR_SUBMIT_RATE_BUCKET,
   consumeAttempt,
 } from "../rate-limit";
 import type {
   AdminRepairsResult,
+  PendingRepairsResult,
   RepairInput,
   RoomRepairsResult,
 } from "./types";
@@ -18,18 +20,22 @@ import {
   appendRepairRow,
   fetchRepairsSnapshot,
   writeRepairDone,
+  writeRepairExpense,
+  writeRepairStatusAndVisit,
 } from "./google";
 import {
   REPAIR_ID_PATTERN,
   buildPendingRepairs,
+  buildAdminRepairs,
   buildRoomRepairs,
   findRepairRow,
   isRepairCategory,
   isValidOptionalNote,
   isValidRepairNote,
+  isValidTaipeiDateTime,
 } from "./validate";
 import { todayInTaipei } from "./dates";
-import { acquireRepairDoneLock } from "./repair-lock";
+import { acquireRepairLock } from "./repair-lock";
 import { AppFeedUnavailableError } from "./feed";
 
 export type RepairInputFields = {
@@ -57,6 +63,35 @@ export type CompleteRepairResult =
         | "already-done"
         | "not-found"
         | "invalid-note"
+        | "unavailable"
+        | "rate"
+        | "generic";
+    };
+
+export type UpdateRepairStatusResult =
+  | { kind: "ok" }
+  | { kind: "denied" }
+  | {
+      kind: "error";
+      reason:
+        | "not-found"
+        | "already-done"
+        | "invalid-status"
+        | "invalid-window"
+        | "unavailable"
+        | "rate"
+        | "generic";
+    };
+
+export type UpdateRepairExpenseResult =
+  | { kind: "ok" }
+  | { kind: "denied" }
+  | {
+      kind: "error";
+      reason:
+        | "not-found"
+        | "not-done"
+        | "invalid-amount"
         | "unavailable"
         | "rate"
         | "generic";
@@ -107,6 +142,11 @@ async function completionLimiterKeys(): Promise<string[]> {
   return [`ip:${clientIpFromHeaders(headerList)}`];
 }
 
+async function adminUpdateLimiterKeys(): Promise<string[]> {
+  const headerList = await headers();
+  return [`ip:${clientIpFromHeaders(headerList)}`];
+}
+
 /**
  * Returns only the requested room's repair projection. The sheet is read and
  * filtered inside this cached function; the raw snapshot never escapes.
@@ -134,7 +174,7 @@ export async function getRoomRepairs(
  * Lists pending repairs for the admin console. Reads fresh on each call and
  * returns only the room, request ID, category, note, and submitted date.
  */
-export async function listPendingRepairs(): Promise<AdminRepairsResult> {
+export async function listPendingRepairs(): Promise<PendingRepairsResult> {
   if (!(await isAdminSession())) return { kind: "denied" };
 
   const snapshot = await fetchRepairsSnapshot();
@@ -152,6 +192,23 @@ export async function listPendingRepairs(): Promise<AdminRepairsResult> {
   }
 
   return { kind: "ok", repairs };
+}
+
+/** Reads all admin repairs and their total from a fresh validated snapshot. */
+export async function listAdminRepairs(): Promise<AdminRepairsResult> {
+  if (!(await isAdminSession())) return { kind: "denied" };
+
+  const snapshot = await fetchRepairsSnapshot();
+  if (snapshot.kind !== "ok") {
+    console.warn("[repairs] admin list unavailable", { reason: snapshot.reason });
+    return { kind: "unavailable" };
+  }
+  const projection = buildAdminRepairs(snapshot.snapshot);
+  if (projection === null) {
+    console.warn("[repairs] admin list unavailable", { reason: "invalid" });
+    return { kind: "unavailable" };
+  }
+  return { kind: "ok", ...projection };
 }
 
 /**
@@ -223,7 +280,7 @@ export async function submitRepair(
 }
 
 /**
- * Marks one pending repair done. Reads fresh, rejects an unknown or completed
+ * Marks one active repair done. Reads fresh, rejects an unknown or completed
  * request, writes the status, completion date, and optional note, and
  * refreshes that room's history.
  */
@@ -261,7 +318,7 @@ export async function completeRepair(
 
   let release: (() => Promise<void>) | null = null;
   try {
-    release = await acquireRepairDoneLock(id);
+    release = await acquireRepairLock(id);
   } catch {
     console.warn("[repairs] completion not saved", { reason: "lock" });
     return { kind: "error", reason: "unavailable" };
@@ -291,7 +348,7 @@ export async function completeRepair(
       return { kind: "error", reason: "unavailable" };
     }
 
-    if (lookup.repair.status !== "pending") {
+    if (lookup.repair.status === "done") {
       return { kind: "error", reason: "already-done" };
     }
 
@@ -339,6 +396,251 @@ export async function completeRepair(
       await release();
     } catch {
       console.warn("[repairs] completion lock release failed");
+    }
+  }
+}
+
+/** Updates status and visit timing for one active repair. */
+export async function updateRepairStatus(
+  requestId: string,
+  statusInput: unknown,
+  visitStartInput: unknown,
+  visitEndInput: unknown,
+): Promise<UpdateRepairStatusResult> {
+  if (!(await isAdminSession())) return { kind: "denied" };
+
+  const id = text(requestId);
+  if (!REPAIR_ID_PATTERN.test(id)) {
+    return { kind: "error", reason: "not-found" };
+  }
+
+  if (
+    typeof statusInput !== "string" ||
+    (statusInput !== "pending" &&
+      statusInput !== "scheduled" &&
+      statusInput !== "in_progress")
+  ) {
+    return { kind: "error", reason: "invalid-status" };
+  }
+
+  if (typeof visitStartInput !== "string" || typeof visitEndInput !== "string") {
+    return { kind: "error", reason: "invalid-window" };
+  }
+
+  const visitStart = visitStartInput.trim();
+  const visitEnd = visitEndInput.trim();
+  const hasStart = visitStart !== "";
+  const hasEnd = visitEnd !== "";
+  if (
+    hasStart !== hasEnd ||
+    (statusInput === "scheduled" && !hasStart) ||
+    (hasStart &&
+      (!isValidTaipeiDateTime(visitStart) ||
+        !isValidTaipeiDateTime(visitEnd) ||
+        visitEnd <= visitStart))
+  ) {
+    return { kind: "error", reason: "invalid-window" };
+  }
+
+  let allowed = false;
+  try {
+    const decision = await consumeAttempt(
+      REPAIR_ADMIN_UPDATE_RATE_BUCKET,
+      await adminUpdateLimiterKeys(),
+    );
+    allowed = decision.allowed;
+  } catch {
+    console.warn("[repairs] status update not saved", { reason: "limiter" });
+    return { kind: "error", reason: "unavailable" };
+  }
+  if (!allowed) {
+    console.warn("[repairs] status update not saved", { reason: "rate-limit" });
+    return { kind: "error", reason: "rate" };
+  }
+
+  let release: (() => Promise<void>) | null = null;
+  try {
+    release = await acquireRepairLock(id);
+  } catch {
+    console.warn("[repairs] status update not saved", { reason: "lock" });
+    return { kind: "error", reason: "unavailable" };
+  }
+  if (release === null) {
+    console.warn("[repairs] status update not saved", { reason: "locked" });
+    return { kind: "error", reason: "unavailable" };
+  }
+
+  try {
+    const snapshot = await fetchRepairsSnapshot();
+    if (snapshot.kind !== "ok") {
+      console.warn("[repairs] status update not saved", {
+        reason: snapshot.reason,
+      });
+      return { kind: "error", reason: "unavailable" };
+    }
+
+    const lookup = findRepairRow(snapshot.snapshot, id);
+    if (!lookup.ok) {
+      if (lookup.reason === "not-found") {
+        return { kind: "error", reason: "not-found" };
+      }
+      console.warn("[repairs] status update not saved", {
+        reason: lookup.reason,
+      });
+      return { kind: "error", reason: "unavailable" };
+    }
+    if (lookup.repair.status === "done") {
+      return { kind: "error", reason: "already-done" };
+    }
+
+    const written = await writeRepairStatusAndVisit(
+      lookup.rowNumber,
+      statusInput,
+      visitStart,
+      visitEnd,
+    );
+    if (written.kind !== "ok") {
+      console.warn("[repairs] status update not saved", { reason: "write" });
+      return { kind: "error", reason: "unavailable" };
+    }
+
+    const verification = await fetchRepairsSnapshot();
+    if (verification.kind !== "ok") {
+      console.warn("[repairs] status update not saved", {
+        reason: "verify-read",
+      });
+      return { kind: "error", reason: "unavailable" };
+    }
+
+    const verified = findRepairRow(verification.snapshot, id);
+    if (
+      !verified.ok ||
+      verified.rowNumber !== lookup.rowNumber ||
+      verified.repair.status !== statusInput ||
+      verified.repair.visitStart !== (hasStart ? visitStart : null) ||
+      verified.repair.visitEnd !== (hasEnd ? visitEnd : null)
+    ) {
+      console.warn("[repairs] status update not saved", { reason: "verify" });
+      return { kind: "error", reason: "unavailable" };
+    }
+
+    revalidateTag(`appfeed:repairs:room:${lookup.repair.room}`, {
+      expire: 0,
+    });
+    return { kind: "ok" };
+  } finally {
+    try {
+      await release();
+    } catch {
+      console.warn("[repairs] update lock release failed");
+    }
+  }
+}
+
+/** Saves or clears the expense on one completed repair. */
+export async function updateRepairExpense(
+  requestId: string,
+  expenseInput: unknown,
+): Promise<UpdateRepairExpenseResult> {
+  if (!(await isAdminSession())) return { kind: "denied" };
+
+  const id = text(requestId);
+  if (!REPAIR_ID_PATTERN.test(id)) {
+    return { kind: "error", reason: "not-found" };
+  }
+
+  if (typeof expenseInput !== "string") {
+    return { kind: "error", reason: "invalid-amount" };
+  }
+  const expenseText = expenseInput.trim();
+  let expenseAmount: number | null = null;
+  if (expenseText !== "") {
+    if (!/^\d+$/.test(expenseText)) {
+      return { kind: "error", reason: "invalid-amount" };
+    }
+    expenseAmount = Number(expenseText);
+    if (!Number.isSafeInteger(expenseAmount)) {
+      return { kind: "error", reason: "invalid-amount" };
+    }
+  }
+
+  let allowed = false;
+  try {
+    const decision = await consumeAttempt(
+      REPAIR_ADMIN_UPDATE_RATE_BUCKET,
+      await adminUpdateLimiterKeys(),
+    );
+    allowed = decision.allowed;
+  } catch {
+    console.warn("[repairs] expense update not saved", { reason: "limiter" });
+    return { kind: "error", reason: "unavailable" };
+  }
+  if (!allowed) {
+    console.warn("[repairs] expense update not saved", { reason: "rate-limit" });
+    return { kind: "error", reason: "rate" };
+  }
+
+  let release: (() => Promise<void>) | null = null;
+  try {
+    release = await acquireRepairLock(id);
+  } catch {
+    console.warn("[repairs] expense update not saved", { reason: "lock" });
+    return { kind: "error", reason: "unavailable" };
+  }
+  if (release === null) {
+    console.warn("[repairs] expense update not saved", { reason: "locked" });
+    return { kind: "error", reason: "unavailable" };
+  }
+
+  try {
+    const snapshot = await fetchRepairsSnapshot();
+    if (snapshot.kind !== "ok") {
+      console.warn("[repairs] expense update not saved", { reason: snapshot.reason });
+      return { kind: "error", reason: "unavailable" };
+    }
+    const lookup = findRepairRow(snapshot.snapshot, id);
+    if (!lookup.ok) {
+      if (lookup.reason === "not-found") {
+        return { kind: "error", reason: "not-found" };
+      }
+      console.warn("[repairs] expense update not saved", { reason: lookup.reason });
+      return { kind: "error", reason: "unavailable" };
+    }
+    if (lookup.repair.status !== "done") {
+      return { kind: "error", reason: "not-done" };
+    }
+
+    const written = await writeRepairExpense(lookup.rowNumber, expenseAmount);
+    if (written.kind !== "ok") {
+      console.warn("[repairs] expense update not saved", { reason: "write" });
+      return { kind: "error", reason: "unavailable" };
+    }
+
+    const verification = await fetchRepairsSnapshot();
+    if (verification.kind !== "ok") {
+      console.warn("[repairs] expense update not saved", { reason: "verify-read" });
+      return { kind: "error", reason: "unavailable" };
+    }
+    const verified = findRepairRow(verification.snapshot, id);
+    if (
+      !verified.ok ||
+      verified.rowNumber !== lookup.rowNumber ||
+      verified.repair.status !== "done" ||
+      verified.repair.expenseAmount !== expenseAmount
+    ) {
+      console.warn("[repairs] expense update not saved", { reason: "verify" });
+      return { kind: "error", reason: "unavailable" };
+    }
+
+    revalidateTag(`appfeed:repairs:room:${lookup.repair.room}`, {
+      expire: 0,
+    });
+    return { kind: "ok" };
+  } finally {
+    try {
+      await release();
+    } catch {
+      console.warn("[repairs] expense update lock release failed");
     }
   }
 }

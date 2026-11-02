@@ -136,19 +136,19 @@ Before reading any cell, the system SHALL request spreadsheet metadata limited t
 
 ### Requirement: Fixed ranges and header allow-list
 
-The system SHALL read cell data only from the fixed A1 ranges `Bills!A:Q`, `Leases!A:D`, and, when present, `Repairs!A:H`, and SHALL validate each first row against the exact header allow-list. It MUST NOT fetch any other tab, column, or range. A tenant claim write SHALL target only `Bills!H:I`. A claim confirmation SHALL write only `Bills!P:Q` and then `Bills!G` on a row inside the Bills range. A repair status write SHALL target only `Repairs!F:H`. A repair append SHALL target `Repairs!A:H`.
+The system SHALL read cell data only from `Bills!A:Q`, `Leases!A:D`, and, when present, `Repairs!A:K`, and SHALL validate each first row against the exact header allow-list. It MUST NOT fetch any other tab, column, or range. A tenant claim write SHALL target only `Bills!H:I`. A claim confirmation SHALL write only `Bills!P:Q` and then `Bills!G`. Repair writes SHALL target only `Repairs!A:K`.
 
 #### Scenario: Only fixed ranges are requested
 - **WHEN** the app reads cell data
-- **THEN** the only ranges in the request are `Bills!A:Q`, `Leases!A:D`, and, when the tab exists, `Repairs!A:H`
+- **THEN** the only ranges in the request are `Bills!A:Q`, `Leases!A:D`, and, when present, `Repairs!A:K`
 
 #### Scenario: Header mismatch
 - **WHEN** a required header is renamed, reordered, duplicated, or missing
 - **THEN** the affected tab is unavailable and no rows from it are interpreted
 
 #### Scenario: Extra column is never fetched
-- **WHEN** the sheet contains data in a column beyond Q on Bills, beyond D on Leases, or beyond H on Repairs
-- **THEN** that column is outside the requested range and never reaches the app
+- **WHEN** the sheet contains data beyond Q on Bills, beyond D on Leases, or beyond K on Repairs
+- **THEN** that data is outside the requested ranges and never reaches the app
 
 #### Scenario: Write stays inside the claim columns
 - **WHEN** a tenant writes a claim
@@ -156,11 +156,15 @@ The system SHALL read cell data only from the fixed A1 ranges `Bills!A:Q`, `Leas
 
 #### Scenario: Confirmation writes stay inside their columns
 - **WHEN** an admin confirms a claim
-- **THEN** the only update ranges are `Bills!P:Q` and `Bills!G` and no other column changes
+- **THEN** the only update ranges are `Bills!P:Q` and `Bills!G`
+
+#### Scenario: Repair writes stay inside the Repairs row
+- **WHEN** a tenant submits a repair or an admin updates its status, visit window, completion, or expense
+- **THEN** the write changes only the intended cells in that request's `Repairs!A:K` row
 
 #### Scenario: Repair write stays inside the status columns
-- **WHEN** a repair request is appended or marked done
-- **THEN** the only update ranges are inside `Repairs!A:H` and no other column changes
+- **WHEN** an admin updates a repair
+- **THEN** the write stays inside the status, completion, visit, or expense cells of that Repairs row
 
 #### Scenario: No Repairs range when the tab is absent
 - **WHEN** the `Repairs` tab is absent
@@ -444,31 +448,47 @@ The system MUST NOT read, cache, log, or display tenant personal information. Ap
 
 ### Requirement: Repairs tab schema
 
-The `Repairs` tab SHALL expose exactly the header row `room, request_id, category, note, submitted_on, status, done_on, done_note` in that order. It SHALL hold one row per repair request, with room A-E, a unique 16-character lowercase hex request ID, category `plumbing`, `electrical`, `appliance`, or `other`, a short note, an ISO submitted date, status `pending` or `done`, a blank or ISO done date, and an optional completion note. A pending row SHALL have a blank completion note. Deposit and free-text personal data are excluded.
+The `Repairs` tab SHALL expose exactly the header row `room, request_id, category, note, submitted_on, status, done_on, done_note, visit_start, visit_end, expense_amount` in that order. It SHALL hold one row per repair request, with room A-E, a unique 16-character lowercase hex request ID, an allowed category, a short note, an ISO submitted date, status `pending`, `scheduled`, `in_progress`, or `done`, an optional complete visit window, a blank or ISO done date, an optional completion note, and an optional whole-NT$ expense amount. Expense amounts are admin-only. Deposit and free-text personal data are excluded.
 
 #### Scenario: Exact Repairs header
 - **WHEN** the first row of the Repairs tab is read
-- **THEN** it equals the eight header names above, in that order, after trimming surrounding whitespace
+- **THEN** it equals the eleven header names above, in that order, after trimming surrounding whitespace
 
 #### Scenario: Valid repair row
-- **WHEN** a Repairs row has room A, a 16-character hex ID, an allowed category, a valid note, an ISO submitted date, and status `pending`
-- **THEN** the row is valid and appears in room A's repair history
+- **WHEN** a Repairs row has valid request fields and status `pending`
+- **THEN** the row is valid and appears in the room's repair history
 
 #### Scenario: Unique request ID
 - **WHEN** two Repairs rows have the same request_id
 - **THEN** both rows are invalid
 
 #### Scenario: Status and done date pair
-- **WHEN** a Repairs row has status `pending` and a done date, or status `done` and a blank done date
+- **WHEN** a Repairs row has status other than `done` with a done date, or status `done` with a blank done date
+- **THEN** the row is invalid
+
+#### Scenario: Scheduled row has a visit window
+- **WHEN** a Repairs row has status `scheduled` and no complete visit window
+- **THEN** the row is invalid
+
+#### Scenario: Visit window is complete or blank
+- **WHEN** only one of visit_start and visit_end is set, or the end is not after the start
 - **THEN** the row is invalid
 
 #### Scenario: Pending row has no completion note
-- **WHEN** a Repairs row has status `pending` and a completion note
+- **WHEN** a Repairs row is not done and has a completion note
 - **THEN** the row is invalid
 
 #### Scenario: Done row may have a note
 - **WHEN** a Repairs row has status `done`, a done date, and a valid completion note
 - **THEN** the row is valid
+
+#### Scenario: Expense is optional
+- **WHEN** a Repairs row has a blank expense_amount
+- **THEN** the row is valid and no expense is included in the admin total
+
+#### Scenario: Zero expense is a recorded amount
+- **WHEN** a Repairs row has expense_amount `0`
+- **THEN** the row is valid and zero is included as a recorded amount
 
 #### Scenario: Header-only tab
 - **WHEN** the Repairs tab has only its header row
@@ -476,7 +496,7 @@ The `Repairs` tab SHALL expose exactly the header row `room, request_id, categor
 
 ### Requirement: Strict Repairs row validation
 
-Each Repairs value SHALL be validated: room A-E after trim and uppercase; request_id `^[0-9a-f]{16}$`; category one of the four allowed values; submitted_on a real ISO date; status `pending` or `done`; done_on blank for `pending` and a real ISO date not earlier than submitted_on for `done`; done_note blank for `pending` and blank or a valid note for `done`; no duplicate request_id. Rows failing any check are invalid. The repair note SHALL follow its separate note rule.
+Each Repairs value SHALL be validated: room A-E; request_id `^[0-9a-f]{16}$`; category one of the four allowed values; submitted_on a real ISO date; status one of `pending`, `scheduled`, `in_progress`, or `done`; done_on blank unless status is `done`, and a real date not earlier than submitted_on when set; done_note blank unless status is `done`, and otherwise blank or a valid note; visit_start and visit_end both blank or both valid Asia/Taipei timestamps with start before end; a scheduled row SHALL have a visit window; expense_amount blank or a whole non-negative NT$ integer; no duplicate request_id. Rows failing any check are invalid.
 
 #### Scenario: Invalid request ID rejected
 - **WHEN** a request_id is short, long, uppercase, or contains a non-hex character
@@ -486,12 +506,20 @@ Each Repairs value SHALL be validated: room A-E after trim and uppercase; reques
 - **WHEN** a category is not `plumbing`, `electrical`, `appliance`, or `other`
 - **THEN** the row is invalid
 
+#### Scenario: Invalid status rejected
+- **WHEN** status is not `pending`, `scheduled`, `in_progress`, or `done`
+- **THEN** the row is invalid
+
 #### Scenario: Impossible submitted date rejected
 - **WHEN** submitted_on contains `2026-02-30` or another non-existent date
 - **THEN** the row is invalid
 
 #### Scenario: Done without a date rejected
 - **WHEN** a row has status `done` and a blank done_on
+- **THEN** the row is invalid
+
+#### Scenario: Non-done row with completion date rejected
+- **WHEN** a row has a non-done status and a done_on value
 - **THEN** the row is invalid
 
 #### Scenario: Pending with a date rejected
@@ -510,8 +538,28 @@ Each Repairs value SHALL be validated: room A-E after trim and uppercase; reques
 - **WHEN** a done_note is longer than 200 characters, has a control character, or contains an email, a URL, or seven or more digits in a row
 - **THEN** the row is invalid
 
+#### Scenario: Non-done completion note rejected
+- **WHEN** a non-done row has a done_note value
+- **THEN** the row is invalid
+
 #### Scenario: Pending completion note rejected
 - **WHEN** a pending row has a done_note value
+- **THEN** the row is invalid
+
+#### Scenario: Scheduled row without a window rejected
+- **WHEN** a row has status `scheduled` and either visit time is blank
+- **THEN** the row is invalid
+
+#### Scenario: Partial or reversed visit window rejected
+- **WHEN** only one visit time is set or visit_end is not after visit_start
+- **THEN** the row is invalid
+
+#### Scenario: Invalid visit timestamp rejected
+- **WHEN** a visit time is not a real date and time with the Asia/Taipei offset
+- **THEN** the row is invalid
+
+#### Scenario: Invalid expense rejected
+- **WHEN** expense_amount is negative, fractional, formatted with separators, or not numeric
 - **THEN** the row is invalid
 
 ### Requirement: Repair note content rules
@@ -552,35 +600,55 @@ A repair note SHALL contain 1 to 200 printable characters after trimming and MUS
 
 ### Requirement: Repair write boundaries
 
-The system SHALL append one complete row to `Repairs` when a tenant submits a request. It SHALL update only `status`, `done_on`, and `done_note` of an existing Repairs row when an admin marks it done. A repair write MUST NOT change `room`, `request_id`, `category`, `note`, or `submitted_on`, and MUST NOT create, delete, reorder, or rename tabs or columns.
+The system SHALL append one complete row to `Repairs` when a tenant submits a request. An admin SHALL update only lifecycle fields, visit times, completion fields, or expense_amount on an existing row. A repair write MUST NOT change the room, request ID, category, note, or submitted date, and MUST NOT create, delete, reorder, or rename tabs or columns.
 
 #### Scenario: Submit appends one row
 - **WHEN** a valid repair request is accepted
-- **THEN** the `Repairs` tab gains one row with all eight cells, status `pending`, and a blank completion note
+- **THEN** the `Repairs` tab gains one complete row with status `pending`, blank completion fields, blank visit times, and blank expense_amount
+
+#### Scenario: Status and visit update changes only those fields
+- **WHEN** an admin updates an active repair's status or visit window
+- **THEN** only `status`, `visit_start`, and `visit_end` change on that row
 
 #### Scenario: Status write changes two cells
 - **WHEN** an admin marks a request done without a note
-- **THEN** only `status` and `done_on` change on that row
+- **THEN** only the status and done date change on that row
+
+#### Scenario: Completion changes completion fields
+- **WHEN** an admin marks an active repair done
+- **THEN** only `status`, `done_on`, and `done_note` change, in one row update
 
 #### Scenario: Completion note is written
 - **WHEN** an admin marks a request done with a note
-- **THEN** `status`, `done_on`, and `done_note` change on that row
+- **THEN** status, done date, and completion note change on that row
+
+#### Scenario: Expense update changes one cell
+- **WHEN** an admin records or changes an expense amount
+- **THEN** only `expense_amount` changes on that row
+
+#### Scenario: Original request fields stay unchanged
+- **WHEN** a repair submission or admin update is written
+- **THEN** room, request_id, category, note, and submitted_on keep their values
 
 #### Scenario: No other cell changes
 - **WHEN** a repair submission or completion is written
-- **THEN** `room`, `request_id`, `category`, `note`, and `submitted_on` keep their values
+- **THEN** the room, request ID, category, note, and submitted date keep their values
 
 #### Scenario: No structural write
 - **WHEN** a repair write request is inspected
 - **THEN** it does not create or delete a tab, delete a row, or change a header
 
 #### Scenario: Append failure leaves no partial row
-- **WHEN** the append call fails with a timeout, 401, 403, 429, or 5xx
+- **WHEN** the append call fails
 - **THEN** no partial row is written and the tenant sees the generic failure
 
+#### Scenario: Update failure leaves row unchanged
+- **WHEN** an admin repair update fails
+- **THEN** the row keeps all previous values and the admin sees a generic failure
+
 #### Scenario: Status write failure leaves both cells unchanged
-- **WHEN** the status update call fails
-- **THEN** `status` and `done_on` keep their previous values, and `done_note` is not written
+- **WHEN** a status update fails
+- **THEN** the status and done date keep their previous values, and the completion note is not written
 
 ### Requirement: Repair fail-closed behavior
 
@@ -608,35 +676,43 @@ An invalid Repairs row attributed to room X SHALL make only room X's repair hist
 
 ### Requirement: Repair projection is narrow and server-only
 
-The system SHALL expose repair data only through server-only accessors. A tenant accessor SHALL accept a validated room letter and return only that room's `request_id`, `category`, `note`, `submitted_on`, `status`, `done_on`, and the latest completion as a date and optional note. The admin accessor SHALL accept only an admin session and return only room, `request_id`, `category`, `note`, and `submitted_on` for pending requests. No route, route handler, or Server Action SHALL return full Repair rows.
+The system SHALL expose repair data only through server-only accessors. A tenant accessor SHALL return only the owning room's request ID, category, note, submitted date, status, visit window, done date, and latest completion date and note. An admin accessor SHALL require an admin session and return only fields needed to manage repairs and calculate the expense total. Expense amounts MUST NOT enter tenant projections. No route, route handler, or Server Action SHALL return full Repair rows.
 
 #### Scenario: Room A receives no other room's repairs
 - **WHEN** a fixture feed contains distinct repair values for rooms A-E and room A's repairs are requested
 - **THEN** the serialized result contains only room A's repair values and none of room B-E's values
 
+#### Scenario: Tenant projection excludes expense
+- **WHEN** a tenant loads the repair history for their room
+- **THEN** the projection and response contain no expense amount
+
+#### Scenario: Admin projection supports repair management
+- **WHEN** an admin loads repair management
+- **THEN** the projection contains lifecycle fields, visit times, and expense amounts for use by the admin page
+
 #### Scenario: Admin repair projection is narrow
-- **WHEN** an admin loads the pending repair list
-- **THEN** each entry holds only room, request ID, category, note, and submitted date, and no done date, completion note, or other sheet value
+- **WHEN** an admin loads the repair list
+- **THEN** each entry contains only repair fields needed by the admin view and no unrelated AppFeed values
 
 #### Scenario: Tenant cannot call the admin accessor
-- **WHEN** a tenant session or anonymous request asks for the pending repair list
-- **THEN** the system denies access before reading the sheet
+- **WHEN** a tenant session or anonymous request asks for the admin repair list
+- **THEN** the system denies access before returning repair values
 
 #### Scenario: No endpoint returns full repair rows
-- **WHEN** the app's routes, route handlers, and Server Actions are inspected
-- **THEN** none returns full `Repairs` rows or a full-sheet snapshot to the client
-
-#### Scenario: Latest completion is projected
-- **WHEN** a room has more than 20 repairs and its latest done repair is outside the 20-item history
-- **THEN** the tenant repair result holds that latest completion date and note
+- **WHEN** routes, route handlers, and Server Actions are inspected
+- **THEN** none returns raw `Repairs` rows or a full-sheet snapshot to the client
 
 #### Scenario: Latest completion stays in its room
 - **WHEN** rooms A and B have done repairs and room A's repairs are requested
 - **THEN** room A's result holds only room A's latest completion and no room B completion
 
+#### Scenario: Latest completion is projected
+- **WHEN** a room has more than 20 repairs and its latest done repair is outside the 20-item history
+- **THEN** the tenant repair result holds that latest completion date and note
+
 ### Requirement: Repair cache is room-scoped
 
-The repair accessor SHALL be cached with `use cache` and keyed by the room letter, with `cacheLife({ stale: 300, revalidate: 900, expire: 3600 })` and tag `appfeed:repairs:room:<letter>`. Each entry SHALL contain only that room's repair projection. A successful repair submit or completion SHALL invalidate the tag for the affected room.
+The repair accessor SHALL use a cache entry for one room only. A successful repair submit or admin update SHALL invalidate the tag for the affected room. The admin expense total SHALL use a fresh, validated admin projection.
 
 #### Scenario: Cache key is the room
 - **WHEN** room A and room B request their repair histories
@@ -650,6 +726,10 @@ The repair accessor SHALL be cached with `use cache` and keyed by the room lette
 - **WHEN** a repair submit succeeds for room A
 - **THEN** the room A repair tag is invalidated and room B's entry is unchanged
 
+#### Scenario: Admin update invalidates the affected room
+- **WHEN** an admin changes status, visit timing, completion, or expense for room A
+- **THEN** the room A repair tag is invalidated and room B's entry is unchanged
+
 #### Scenario: Completion invalidates only its room
 - **WHEN** an admin marks a room A request done
 - **THEN** the room A repair tag is invalidated and room B's entry is unchanged
@@ -657,7 +737,6 @@ The repair accessor SHALL be cached with `use cache` and keyed by the room lette
 #### Scenario: Missing tab is not cached as empty
 - **WHEN** the `Repairs` tab is absent
 - **THEN** the repair section shows unavailable on every load and does not show an empty history
-
 ### Requirement: Claim confirmation write boundaries
 
 The system SHALL write a claim confirmation to only `Bills!P:Q` and `Bills!G` of an existing row. It SHALL write the confirmation date and note first, then the paid date. A failed second write SHALL leave the claim pending. A confirmation write MUST NOT create, delete, or reorder rows, tabs, or columns.

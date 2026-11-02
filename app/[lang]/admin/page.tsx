@@ -5,19 +5,22 @@ import { RenewalBanner } from "@/app/[lang]/renewal-banner";
 import SectionCard from "@/app/[lang]/section-card";
 import { type BankAccount, getBankAccount } from "@/lib/bank-account";
 import { listPendingClaims, type PendingClaimsResult } from "@/lib/appfeed/claims";
-import { listPendingRepairs } from "@/lib/appfeed/repairs";
+import { listAdminRepairs } from "@/lib/appfeed/repairs";
 import { listLeaseRenewals } from "@/lib/appfeed/renewal";
 import type {
+  AdminRepair,
   AdminLeaseRenewalsResult,
   AdminRepairsResult,
 } from "@/lib/appfeed/types";
 import { getDictionary, isLocale, localePath } from "@/lib/i18n";
-import { formatDate } from "@/lib/i18n/format";
+import { formatDate, formatTwd } from "@/lib/i18n/format";
 import { isAdminSession } from "@/lib/session-cookies";
 import AdminBankForm from "./bank-form";
 import ClaimConfirmForm from "./claim-confirm-form";
 import AdminResetForm from "./reset-form";
 import RepairDoneForm from "./repair-done-form";
+import RepairExpenseForm from "./repair-expense-form";
+import RepairStatusForm from "./repair-status-form";
 
 export const instant = false;
 
@@ -53,7 +56,7 @@ export default async function AdminPage({ params }: AdminPageProps) {
 
   let repairsResult: AdminRepairsResult = { kind: "unavailable" };
   try {
-    repairsResult = await listPendingRepairs();
+    repairsResult = await listAdminRepairs();
   } catch {
     repairsResult = { kind: "unavailable" };
   }
@@ -70,6 +73,18 @@ export default async function AdminPage({ params }: AdminPageProps) {
   if (renewalsResult.kind === "denied") {
     redirect(localePath(lang, "/admin/login"));
   }
+
+  const activeRepairs =
+    repairsResult.kind === "ok"
+      ? repairsResult.repairs.filter(
+          (repair): repair is AdminRepair & { status: "pending" | "scheduled" | "in_progress" } =>
+            repair.status !== "done",
+        )
+      : [];
+  const completedRepairs =
+    repairsResult.kind === "ok"
+      ? repairsResult.repairs.filter((repair) => repair.status === "done")
+      : [];
 
   return (
     <PortalShell
@@ -175,6 +190,11 @@ export default async function AdminPage({ params }: AdminPageProps) {
         </div>
         <div className="lg:col-span-2">
           <SectionCard title={dictionary.admin.repairs.sectionHeading}>
+            {repairsResult.kind === "ok" ? (
+              <p className="mb-4 rounded-md border border-slate-700 bg-slate-950/50 p-3 text-sm text-slate-200">
+                {dictionary.admin.repairs.expenseTotal}: {formatTwd(repairsResult.expenseTotal, lang)}
+              </p>
+            ) : null}
             {repairsResult.kind !== "ok" ? (
               <p className="text-sm text-slate-300">
                 {dictionary.admin.repairs.unavailable}
@@ -184,8 +204,16 @@ export default async function AdminPage({ params }: AdminPageProps) {
                 {dictionary.admin.repairs.empty}
               </p>
             ) : (
-              <ul className="space-y-3">
-                {repairsResult.repairs.map((repair) => (
+              <div className="space-y-6">
+                <section aria-labelledby="active-repairs-heading">
+                  <h2 id="active-repairs-heading" className="mb-3 text-sm font-semibold text-slate-100">
+                    {dictionary.admin.repairs.active}
+                  </h2>
+                  {activeRepairs.length === 0 ? (
+                    <p className="text-sm text-slate-400">{dictionary.admin.repairs.emptyActive}</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {activeRepairs.map((repair) => (
                   <li
                     key={repair.requestId}
                     className="rounded-md border border-slate-800 bg-slate-950/50 p-4"
@@ -204,13 +232,17 @@ export default async function AdminPage({ params }: AdminPageProps) {
                         </span>
                       </div>
                       <span className="rounded-full bg-amber-950 px-2.5 py-1 text-xs font-medium text-amber-200">
-                        {dictionary.admin.repairs.pending}
+                        {repair.status === "pending"
+                          ? dictionary.admin.repairs.pending
+                          : repair.status === "scheduled"
+                            ? dictionary.admin.repairs.scheduled
+                            : dictionary.admin.repairs.inProgress}
                       </span>
                     </div>
                     <p className="mt-2 break-words text-sm text-slate-200">
                       {repair.note}
                     </p>
-                    <div className="mt-3 flex flex-wrap items-end justify-between gap-3 border-t border-slate-800 pt-3">
+                    <div className="mt-3 space-y-3 border-t border-slate-800 pt-3">
                       <div className="text-xs">
                         <span className="text-slate-300">
                           {dictionary.admin.repairs.submittedOn}
@@ -219,6 +251,14 @@ export default async function AdminPage({ params }: AdminPageProps) {
                           {formatDate(repair.submittedOn, lang)}
                         </span>
                       </div>
+                      <RepairStatusForm
+                        locale={lang}
+                        requestId={repair.requestId}
+                        status={repair.status}
+                        visitStart={repair.visitStart}
+                        visitEnd={repair.visitEnd}
+                        labels={dictionary.admin.repairs}
+                      />
                       <RepairDoneForm
                         locale={lang}
                         requestId={repair.requestId}
@@ -226,8 +266,52 @@ export default async function AdminPage({ params }: AdminPageProps) {
                       />
                     </div>
                   </li>
-                ))}
-              </ul>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+                <section aria-labelledby="completed-repairs-heading">
+                  <h2 id="completed-repairs-heading" className="mb-3 text-sm font-semibold text-slate-100">
+                    {dictionary.admin.repairs.completed}
+                  </h2>
+                  {completedRepairs.length === 0 ? (
+                    <p className="text-sm text-slate-400">{dictionary.admin.repairs.emptyCompleted}</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {completedRepairs.map((repair) => (
+                        <li key={repair.requestId} className="rounded-md border border-slate-800 bg-slate-950/50 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                              <span className="font-mono text-sm uppercase text-slate-100">
+                                {dictionary.admin.repairs.room} {repair.room}
+                              </span>
+                              <span className="text-sm font-medium text-slate-100">
+                                {dictionary.room.repairs.categories[repair.category]}
+                              </span>
+                            </div>
+                            <span className="rounded-full bg-emerald-950 px-2.5 py-1 text-xs font-medium text-emerald-200">
+                              {dictionary.admin.repairs.done}
+                            </span>
+                          </div>
+                          <p className="mt-2 break-words text-sm text-slate-200">{repair.note}</p>
+                          <p className="mt-2 text-xs text-slate-300">
+                            {dictionary.admin.repairs.submittedOn} {formatDate(repair.submittedOn, lang)}
+                            {repair.doneOn === null ? "" : ` · ${dictionary.admin.repairs.doneOn} ${formatDate(repair.doneOn, lang)}`}
+                          </p>
+                          <div className="mt-3 border-t border-slate-800 pt-3">
+                            <RepairExpenseForm
+                              locale={lang}
+                              requestId={repair.requestId}
+                              expenseAmount={repair.expenseAmount}
+                              labels={dictionary.admin.repairs}
+                            />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              </div>
             )}
           </SectionCard>
         </div>

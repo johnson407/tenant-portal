@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
   fetchRepairsSnapshot: vi.fn(),
   appendRepairRow: vi.fn(),
   writeRepairDone: vi.fn(),
-  acquireRepairDoneLock: vi.fn(),
+  writeRepairStatusAndVisit: vi.fn(),
+  writeRepairExpense: vi.fn(),
+  acquireRepairLock: vi.fn(),
   headers: vi.fn(),
   cacheLife: vi.fn(),
   cacheTag: vi.fn(),
@@ -45,6 +47,8 @@ vi.mock("@/lib/appfeed/google", () => ({
   fetchRepairsSnapshot: mocks.fetchRepairsSnapshot,
   appendRepairRow: mocks.appendRepairRow,
   writeRepairDone: mocks.writeRepairDone,
+  writeRepairStatusAndVisit: mocks.writeRepairStatusAndVisit,
+  writeRepairExpense: mocks.writeRepairExpense,
 }));
 
 vi.mock("@/lib/appfeed/dates", async (importOriginal) => {
@@ -53,7 +57,7 @@ vi.mock("@/lib/appfeed/dates", async (importOriginal) => {
 });
 
 vi.mock("@/lib/appfeed/repair-lock", () => ({
-  acquireRepairDoneLock: mocks.acquireRepairDoneLock,
+  acquireRepairLock: mocks.acquireRepairLock,
 }));
 
 vi.mock("@/lib/appfeed/feed", () => {
@@ -67,7 +71,12 @@ vi.mock("@/lib/appfeed/feed", () => {
 });
 
 import { submitRepairAction } from "@/app/[lang]/rooms/[room]/repair-actions";
-import { markRepairDoneAction } from "@/app/[lang]/admin/repair-actions";
+import {
+  markRepairDoneAction,
+  updateRepairExpenseAction,
+  updateRepairStatusAction,
+} from "@/app/[lang]/admin/repair-actions";
+import { updateRepairExpense, updateRepairStatus } from "@/lib/appfeed/repairs";
 
 const REQUEST_ID = "0123456789abcdef";
 
@@ -85,6 +94,27 @@ function doneForm(requestId = REQUEST_ID, note?: string): FormData {
   const data = new FormData();
   data.set("requestId", requestId);
   if (note !== undefined) data.set("note", note);
+  return data;
+}
+
+function updateForm(
+  requestId = REQUEST_ID,
+  status = "scheduled",
+  visitStart = "2026-11-04T09:00+08:00",
+  visitEnd = "2026-11-04T12:00+08:00",
+): FormData {
+  const data = new FormData();
+  data.set("requestId", requestId);
+  data.set("status", status);
+  data.set("visitStart", visitStart);
+  data.set("visitEnd", visitEnd);
+  return data;
+}
+
+function expenseForm(requestId = REQUEST_ID, amount = "1250"): FormData {
+  const data = new FormData();
+  data.set("requestId", requestId);
+  data.set("expenseAmount", amount);
   return data;
 }
 
@@ -133,7 +163,9 @@ beforeEach(() => {
   });
   mocks.appendRepairRow.mockResolvedValue({ kind: "ok" });
   mocks.writeRepairDone.mockResolvedValue({ kind: "ok" });
-  mocks.acquireRepairDoneLock.mockResolvedValue(async () => {});
+  mocks.writeRepairStatusAndVisit.mockResolvedValue({ kind: "ok" });
+  mocks.writeRepairExpense.mockResolvedValue({ kind: "ok" });
+  mocks.acquireRepairLock.mockResolvedValue(async () => {});
 });
 
 describe("submitRepairAction", () => {
@@ -415,7 +447,7 @@ describe("markRepairDoneAction", () => {
   });
 
   it("rejects a concurrent completion without a second write", async () => {
-    mocks.acquireRepairDoneLock.mockResolvedValue(null);
+    mocks.acquireRepairLock.mockResolvedValue(null);
 
     const state = await markRepairDoneAction(
       "en",
@@ -580,5 +612,333 @@ describe("markRepairDoneAction", () => {
     expect(state).toEqual({ status: "error", message: "unavailable" });
     expect(mocks.writeRepairDone).toHaveBeenCalledTimes(1);
     expect(mocks.revalidateTag).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateRepairStatus", () => {
+  const visitStart = "2026-11-04T09:00+08:00";
+  const visitEnd = "2026-11-04T12:00+08:00";
+
+  it("saves and verifies a scheduled repair window", async () => {
+    mocks.fetchRepairsSnapshot
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: repairSnapshot([pendingRow()]),
+      })
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: repairSnapshot([
+          pendingRow({
+            5: "scheduled",
+            8: visitStart,
+            9: visitEnd,
+          }),
+        ]),
+      });
+
+    const result = await updateRepairStatus(
+      REQUEST_ID,
+      "scheduled",
+      visitStart,
+      visitEnd,
+    );
+
+    expect(result).toEqual({ kind: "ok" });
+    expect(mocks.acquireRepairLock).toHaveBeenCalledWith(REQUEST_ID);
+    expect(mocks.writeRepairStatusAndVisit).toHaveBeenCalledWith(
+      2,
+      "scheduled",
+      visitStart,
+      visitEnd,
+    );
+    expect(mocks.revalidateTag).toHaveBeenCalledWith(
+      "appfeed:repairs:room:a",
+      { expire: 0 },
+    );
+  });
+
+  it("rejects a partial window before rate limit or sheet access", async () => {
+    const result = await updateRepairStatus(
+      REQUEST_ID,
+      "pending",
+      visitStart,
+      "",
+    );
+
+    expect(result).toEqual({ kind: "error", reason: "invalid-window" });
+    expect(mocks.consumeAttempt).not.toHaveBeenCalled();
+    expect(mocks.fetchRepairsSnapshot).not.toHaveBeenCalled();
+    expect(mocks.writeRepairStatusAndVisit).not.toHaveBeenCalled();
+  });
+
+  it("requires a visit window for scheduled status", async () => {
+    const result = await updateRepairStatus(REQUEST_ID, "scheduled", "", "");
+
+    expect(result).toEqual({ kind: "error", reason: "invalid-window" });
+    expect(mocks.fetchRepairsSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("rejects a completed repair without writing", async () => {
+    mocks.fetchRepairsSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: repairSnapshot([
+        pendingRow({ 5: "done", 6: "2026-10-31" }),
+      ]),
+    });
+
+    const result = await updateRepairStatus(
+      REQUEST_ID,
+      "in_progress",
+      "",
+      "",
+    );
+
+    expect(result).toEqual({ kind: "error", reason: "already-done" });
+    expect(mocks.writeRepairStatusAndVisit).not.toHaveBeenCalled();
+  });
+
+  it("does not report success when verification fails", async () => {
+    mocks.fetchRepairsSnapshot
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: repairSnapshot([pendingRow()]),
+      })
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: repairSnapshot([pendingRow()]),
+      });
+
+    const result = await updateRepairStatus(
+      REQUEST_ID,
+      "scheduled",
+      visitStart,
+      visitEnd,
+    );
+
+    expect(result).toEqual({ kind: "error", reason: "unavailable" });
+    expect(mocks.revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the request lock is unavailable", async () => {
+    mocks.acquireRepairLock.mockResolvedValue(null);
+
+    const result = await updateRepairStatus(
+      REQUEST_ID,
+      "scheduled",
+      visitStart,
+      visitEnd,
+    );
+
+    expect(result).toEqual({ kind: "error", reason: "unavailable" });
+    expect(mocks.fetchRepairsSnapshot).not.toHaveBeenCalled();
+    expect(mocks.writeRepairStatusAndVisit).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateRepairStatusAction", () => {
+  it("updates status and visit times for an admin", async () => {
+    mocks.fetchRepairsSnapshot
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: repairSnapshot([pendingRow()]),
+      })
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: repairSnapshot([
+          pendingRow({
+            5: "scheduled",
+            8: "2026-11-04T09:00+08:00",
+            9: "2026-11-04T12:00+08:00",
+          }),
+        ]),
+      });
+
+    const state = await updateRepairStatusAction(
+      "en",
+      { status: "idle" },
+      updateForm(),
+    );
+
+    expect(state).toEqual({ status: "success" });
+    expect(mocks.writeRepairStatusAndVisit).toHaveBeenCalledWith(
+      2,
+      "scheduled",
+      "2026-11-04T09:00+08:00",
+      "2026-11-04T12:00+08:00",
+    );
+  });
+
+  it("converts datetime-local form values to Taipei timestamps", async () => {
+    mocks.fetchRepairsSnapshot
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: repairSnapshot([pendingRow()]),
+      })
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: repairSnapshot([
+          pendingRow({
+            5: "scheduled",
+            8: "2026-11-04T09:00+08:00",
+            9: "2026-11-04T12:00+08:00",
+          }),
+        ]),
+      });
+
+    const state = await updateRepairStatusAction(
+      "en",
+      { status: "idle" },
+      updateForm(REQUEST_ID, "scheduled", "2026-11-04T09:00", "2026-11-04T12:00"),
+    );
+
+    expect(state).toEqual({ status: "success" });
+    expect(mocks.writeRepairStatusAndVisit).toHaveBeenCalledWith(
+      2,
+      "scheduled",
+      "2026-11-04T09:00+08:00",
+      "2026-11-04T12:00+08:00",
+    );
+  });
+
+  it("rejects a non-admin before reading or writing", async () => {
+    mocks.isAdminSession.mockResolvedValue(false);
+
+    const state = await updateRepairStatusAction(
+      "en",
+      { status: "idle" },
+      updateForm(),
+    );
+
+    expect(state).toEqual({ status: "error", message: "generic" });
+    expect(mocks.fetchRepairsSnapshot).not.toHaveBeenCalled();
+    expect(mocks.writeRepairStatusAndVisit).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-string visit time", async () => {
+    const data = updateForm();
+    data.set("visitStart", new File(["time"], "time.txt"));
+
+    const state = await updateRepairStatusAction(
+      "en",
+      { status: "idle" },
+      data,
+    );
+
+    expect(state).toEqual({ status: "error", message: "invalid-window" });
+    expect(mocks.fetchRepairsSnapshot).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateRepairExpense", () => {
+  const doneRow = () => pendingRow({ 5: "done", 6: "2026-10-31" });
+
+  it.each([["1250", 1250], ["0", 0], ["", null]])(
+    "saves and verifies expense input %s",
+    async (input, amount) => {
+      mocks.fetchRepairsSnapshot
+        .mockResolvedValueOnce({
+          kind: "ok",
+          snapshot: repairSnapshot([doneRow()]),
+        })
+        .mockResolvedValueOnce({
+          kind: "ok",
+          snapshot: repairSnapshot([
+            pendingRow({ 5: "done", 6: "2026-10-31", 10: amount ?? "" }),
+          ]),
+        });
+
+      const result = await updateRepairExpense(REQUEST_ID, input);
+
+      expect(result).toEqual({ kind: "ok" });
+      expect(mocks.writeRepairExpense).toHaveBeenCalledWith(2, amount);
+      expect(mocks.revalidateTag).toHaveBeenCalledWith(
+        "appfeed:repairs:room:a",
+        { expire: 0 },
+      );
+    },
+  );
+
+  it("rejects invalid amounts before reading the sheet", async () => {
+    const result = await updateRepairExpense(REQUEST_ID, "1.5");
+
+    expect(result).toEqual({ kind: "error", reason: "invalid-amount" });
+    expect(mocks.fetchRepairsSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("rejects active repairs", async () => {
+    mocks.fetchRepairsSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: repairSnapshot([pendingRow()]),
+    });
+
+    const result = await updateRepairExpense(REQUEST_ID, "100");
+
+    expect(result).toEqual({ kind: "error", reason: "not-done" });
+    expect(mocks.writeRepairExpense).not.toHaveBeenCalled();
+  });
+
+  it("fails closed for a non-admin", async () => {
+    mocks.isAdminSession.mockResolvedValue(false);
+
+    const result = await updateRepairExpense(REQUEST_ID, "100");
+
+    expect(result).toEqual({ kind: "denied" });
+    expect(mocks.fetchRepairsSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("returns unavailable when the write fails", async () => {
+    mocks.fetchRepairsSnapshot.mockResolvedValue({
+      kind: "ok",
+      snapshot: repairSnapshot([doneRow()]),
+    });
+    mocks.writeRepairExpense.mockResolvedValue({
+      kind: "unavailable",
+      reason: "server",
+      transient: false,
+    });
+
+    const result = await updateRepairExpense(REQUEST_ID, "100");
+
+    expect(result).toEqual({ kind: "error", reason: "unavailable" });
+    expect(mocks.revalidateTag).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateRepairExpenseAction", () => {
+  it("records expenses for an admin", async () => {
+    mocks.fetchRepairsSnapshot
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: repairSnapshot([
+          pendingRow({ 5: "done", 6: "2026-10-31" }),
+        ]),
+      })
+      .mockResolvedValueOnce({
+        kind: "ok",
+        snapshot: repairSnapshot([
+          pendingRow({ 5: "done", 6: "2026-10-31", 10: "1250" }),
+        ]),
+      });
+
+    const state = await updateRepairExpenseAction(
+      "en",
+      { status: "idle" },
+      expenseForm(),
+    );
+
+    expect(state).toEqual({ status: "success" });
+  });
+
+  it("rejects a non-admin before sheet access", async () => {
+    mocks.isAdminSession.mockResolvedValue(false);
+
+    const state = await updateRepairExpenseAction(
+      "en",
+      { status: "idle" },
+      expenseForm(),
+    );
+
+    expect(state).toEqual({ status: "error", message: "generic" });
+    expect(mocks.fetchRepairsSnapshot).not.toHaveBeenCalled();
   });
 });

@@ -13,6 +13,7 @@ import {
   REPAIRS_HEADER,
   REPAIRS_RANGE,
   hasExactHeaderRow,
+  isValidTaipeiDateTime,
   isRealIsoDate,
   isValidOptionalNote,
   parseRepairRow,
@@ -461,7 +462,7 @@ export async function writeBillPaidOn(
 }
 
 /**
- * Appends one complete pending repair row to `Repairs!A:H`. Uses RAW input so
+ * Appends one complete pending repair row to `Repairs!A:K`. Uses RAW input so
  * Sheets keeps dates and the request ID as text. Only an append is requested;
  * no existing row, tab, or column is changed.
  */
@@ -475,6 +476,9 @@ export async function appendRepairRow(
     repair.note,
     repair.submittedOn,
     "pending",
+    "",
+    "",
+    "",
     "",
     "",
   ]);
@@ -508,6 +512,9 @@ export async function appendRepairRow(
             parsed.note,
             parsed.submittedOn,
             "pending",
+            "",
+            "",
+            "",
             "",
             "",
           ],
@@ -574,6 +581,135 @@ export async function writeRepairDone(
         "content-type": "application/json",
       },
       body: JSON.stringify({ values: [["done", doneOn, note]] }),
+      signal,
+      redirect: "error",
+      cache: "no-store",
+    });
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  if (!response.ok) return statusFailure(response.status);
+
+  try {
+    await readJson(response);
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  return { kind: "ok" };
+}
+
+/**
+ * Updates an active repair's status and visit window without touching its
+ * completion fields or expense amount.
+ */
+export async function writeRepairStatusAndVisit(
+  rowNumber: number,
+  status: string,
+  visitStart: string,
+  visitEnd: string,
+): Promise<{ kind: "ok" } | SnapshotFailure> {
+  const validStatus =
+    status === "pending" || status === "scheduled" || status === "in_progress";
+  const start = visitStart.trim();
+  const end = visitEnd.trim();
+  const hasStart = start !== "";
+  const hasEnd = end !== "";
+
+  if (
+    !Number.isSafeInteger(rowNumber) ||
+    rowNumber < 2 ||
+    !validStatus ||
+    hasStart !== hasEnd ||
+    (status === "scheduled" && !hasStart) ||
+    (hasStart &&
+      (!isValidTaipeiDateTime(start) ||
+        !isValidTaipeiDateTime(end) ||
+        end <= start))
+  ) {
+    return failure("server");
+  }
+
+  const credentials = readCredentials();
+  if (!credentials) return failure("config");
+
+  const signal = AbortSignal.timeout(TIMEOUT_MS);
+  const token = await getAccessToken(credentials, signal);
+  if (token.kind === "unavailable") return token;
+
+  const url = `${SHEETS_API}/${encodeURIComponent(
+    credentials.spreadsheetId,
+  )}/values:batchUpdate?valueInputOption=RAW`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        data: [
+          { range: `Repairs!F${rowNumber}`, values: [[status]] },
+          { range: `Repairs!I${rowNumber}:J${rowNumber}`, values: [[start, end]] },
+        ],
+      }),
+      signal,
+      redirect: "error",
+      cache: "no-store",
+    });
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  if (!response.ok) return statusFailure(response.status);
+
+  try {
+    await readJson(response);
+  } catch (error) {
+    return requestFailure(error);
+  }
+
+  return { kind: "ok" };
+}
+
+/** Updates only the expense amount cell on a repair row. */
+export async function writeRepairExpense(
+  rowNumber: number,
+  expenseAmount: number | null,
+): Promise<{ kind: "ok" } | SnapshotFailure> {
+  if (
+    !Number.isSafeInteger(rowNumber) ||
+    rowNumber < 2 ||
+    (expenseAmount !== null &&
+      (!Number.isSafeInteger(expenseAmount) || expenseAmount < 0))
+  ) {
+    return failure("server");
+  }
+
+  const credentials = readCredentials();
+  if (!credentials) return failure("config");
+
+  const signal = AbortSignal.timeout(TIMEOUT_MS);
+  const token = await getAccessToken(credentials, signal);
+  if (token.kind === "unavailable") return token;
+
+  const range = `Repairs!K${rowNumber}`;
+  const url = `${SHEETS_API}/${encodeURIComponent(
+    credentials.spreadsheetId,
+  )}/values/${range}?valueInputOption=RAW`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${token.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ values: [[expenseAmount === null ? "" : String(expenseAmount)]] }),
       signal,
       redirect: "error",
       cache: "no-store",

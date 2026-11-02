@@ -5,6 +5,7 @@ import {
   REPAIR_NOTE_MAX,
   REPAIRS_HEADER,
   REPAIRS_RANGE,
+  buildAdminRepairs,
   buildPendingRepairs,
   buildRoomRepairs,
   isValidNote,
@@ -23,6 +24,9 @@ function validRepair(overrides: Partial<Record<number, unknown>> = {}): unknown[
     "Leaking tap in the bathroom",
     "2026-10-30",
     "pending",
+    "",
+    "",
+    "",
     "",
     "",
   ];
@@ -51,8 +55,11 @@ describe("Repairs schema constants", () => {
       "status",
       "done_on",
       "done_note",
+      "visit_start",
+      "visit_end",
+      "expense_amount",
     ]);
-    expect(REPAIRS_RANGE).toBe("Repairs!A:H");
+    expect(REPAIRS_RANGE).toBe("Repairs!A:K");
     expect([...REPAIR_CATEGORIES]).toEqual([
       "plumbing",
       "electrical",
@@ -139,7 +146,35 @@ describe("parseRepairRow", () => {
       status: "pending",
       doneOn: null,
       doneNote: null,
+      visitStart: null,
+      visitEnd: null,
+      expenseAmount: null,
     });
+  });
+
+  it("parses a completed row with visit times and a whole-dollar expense", () => {
+    expect(
+      parseRepairRow(
+        validRepair({
+          5: "done",
+          6: "2026-11-01",
+          8: "2026-11-04T09:00+08:00",
+          9: "2026-11-04T12:00+08:00",
+          10: "0",
+        }),
+      ),
+    ).toMatchObject({
+      status: "done",
+      visitStart: "2026-11-04T09:00+08:00",
+      visitEnd: "2026-11-04T12:00+08:00",
+      expenseAmount: 0,
+    });
+  });
+
+  it("rejects an in-progress row with a recorded expense amount", () => {
+    expect(parseRepairRow(validRepair({ 5: "in_progress", 10: "1250" }))).toBe(
+      null,
+    );
   });
 
   it("parses a done request with a later done date", () => {
@@ -221,6 +256,20 @@ describe("parseRepairRow", () => {
     ["impossible submitted date", { 4: "2026-02-30" }],
     ["unknown status", { 5: "open" }],
     ["uppercase status", { 5: "PENDING" }],
+    ["scheduled without a visit window", { 5: "scheduled" }],
+    ["partial visit window", { 8: "2026-11-04T09:00+08:00" }],
+    [
+      "reversed visit window",
+      {
+        8: "2026-11-04T12:00+08:00",
+        9: "2026-11-04T09:00+08:00",
+      },
+    ],
+    ["impossible visit time", { 8: "2026-11-04T24:00+08:00", 9: "2026-11-04T25:00+08:00" }],
+    ["visit with wrong UTC offset", { 8: "2026-11-04T09:00Z", 9: "2026-11-04T12:00Z" }],
+    ["fractional expense", { 10: "12.5" }],
+    ["negative expense", { 10: "-12" }],
+    ["formatted expense", { 10: "1,250" }],
     ["pending with a done date", { 6: "2026-10-31" }],
     ["pending with a completion note", { 7: "Already fixed" }],
     ["done with an invalid completion note", { 5: "done", 6: "2026-11-01", 7: "See https://example.com" }],
@@ -328,6 +377,8 @@ describe("buildRoomRepairs", () => {
         note: "A leak",
         submittedOn: "2026-10-30",
         status: "pending",
+        visitStart: null,
+        visitEnd: null,
         doneOn: null,
       },
     ]);
@@ -463,6 +514,28 @@ describe("buildRoomRepairs", () => {
     };
     expect(buildRoomRepairs(snapshot, "a")).toEqual({ kind: "unavailable" });
   });
+
+  it("projects visit times and status without expense data", () => {
+    const result = buildRoomRepairs(
+      makeRepairsSnapshot([
+        validRepair({
+          5: "scheduled",
+          8: "2026-11-04T09:00+08:00",
+          9: "2026-11-04T12:00+08:00",
+          10: "",
+        }),
+      ]),
+      "a",
+    );
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.repairs[0]).toMatchObject({
+      status: "scheduled",
+      visitStart: "2026-11-04T09:00+08:00",
+      visitEnd: "2026-11-04T12:00+08:00",
+    });
+    expect(result.repairs[0]).not.toHaveProperty("expenseAmount");
+  });
 });
 
 describe("buildPendingRepairs", () => {
@@ -550,5 +623,88 @@ describe("buildPendingRepairs", () => {
       repairs: [[...REPAIRS_HEADER].slice(0, 6)],
     };
     expect(buildPendingRepairs(snapshot)).toBeNull();
+  });
+});
+
+describe("buildAdminRepairs", () => {
+  it("projects all rooms and sums recorded expenses, including zero", () => {
+    const projection = buildAdminRepairs(
+      makeRepairsSnapshot([
+        validRepair({
+          0: "b",
+          1: "2222222222222222",
+          5: "done",
+          6: "2026-11-01",
+          10: "1250",
+        }),
+        validRepair({
+          0: "a",
+          1: "1111111111111111",
+          5: "done",
+          6: "2026-10-31",
+          10: "0",
+        }),
+        validRepair({ 0: "c", 1: "3333333333333333", 10: "" }),
+      ]),
+    );
+
+    expect(projection?.expenseTotal).toBe(1250);
+    expect(projection?.repairs.map((repair) => repair.status)).toEqual([
+      "pending",
+      "done",
+      "done",
+    ]);
+    expect(projection?.repairs.map((repair) => repair.room)).toEqual([
+      "c",
+      "b",
+      "a",
+    ]);
+    expect(projection?.repairs[1].expenseAmount).toBe(1250);
+  });
+
+  it("returns null when any repair row is invalid", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const projection = buildAdminRepairs(
+      makeRepairsSnapshot([
+        validRepair({ 10: "100" }),
+        validRepair({ 0: "b", 1: "2222222222222222", 3: "Contact jane@example.com" }),
+      ]),
+    );
+    expect(projection).toBeNull();
+  });
+
+  it("returns null when a nonblank repair row has an invalid room", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const projection = buildAdminRepairs(
+      makeRepairsSnapshot([
+        validRepair({ 5: "done", 6: "2026-11-01", 10: "100" }),
+        validRepair({
+          0: "z",
+          1: "2222222222222222",
+          5: "done",
+          6: "2026-11-01",
+          10: "400",
+        }),
+      ]),
+    );
+    expect(projection).toBeNull();
+  });
+
+  it("returns null when the total is not a safe integer", () => {
+    const projection = buildAdminRepairs(
+      makeRepairsSnapshot([
+        validRepair({ 1: "1111111111111111", 5: "done", 6: "2026-10-31", 10: "9007199254740991" }),
+        validRepair({ 0: "b", 1: "2222222222222222", 5: "done", 6: "2026-10-31", 10: "1" }),
+      ]),
+    );
+    expect(projection).toBeNull();
+  });
+
+  it("returns null when an active repair has an expense", () => {
+    expect(
+      buildAdminRepairs(
+        makeRepairsSnapshot([validRepair({ 10: "100" })]),
+      ),
+    ).toBeNull();
   });
 });

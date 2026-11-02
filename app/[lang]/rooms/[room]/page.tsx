@@ -404,9 +404,11 @@ export default async function RoomPage({ params }: RoomPageProps) {
                           </span>
                           <span
                             className={
-                              repair.status === "pending"
-                                ? "rounded-full bg-amber-950 px-2.5 py-1 text-xs font-medium text-amber-200"
-                                : "rounded-full bg-emerald-950 px-2.5 py-1 text-xs font-medium text-emerald-200"
+                              repair.status === "done"
+                                ? "rounded-full bg-emerald-950 px-2.5 py-1 text-xs font-medium text-emerald-200"
+                                : repair.status === "in_progress"
+                                  ? "rounded-full bg-sky-950 px-2.5 py-1 text-xs font-medium text-sky-200"
+                                  : "rounded-full bg-amber-950 px-2.5 py-1 text-xs font-medium text-amber-200"
                             }
                           >
                             {
@@ -420,6 +422,16 @@ export default async function RoomPage({ params }: RoomPageProps) {
                           {repair.note}
                         </p>
                         <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-800 pt-3 text-xs">
+                          {repair.visitStart === null || repair.visitEnd === null ? null : (
+                            <div className="flex gap-1">
+                              <dt className="text-slate-300">
+                                {dictionary.room.repairs.history.visitTime}
+                              </dt>
+                              <dd className="font-mono text-slate-100">
+                                {formatDateTime(repair.visitStart, lang)} – {formatDateTime(repair.visitEnd, lang)}
+                              </dd>
+                            </div>
+                          )}
                           <div className="flex gap-1">
                             <dt className="text-slate-300">
                               {dictionary.room.repairs.history.submittedOn}

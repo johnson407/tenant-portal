@@ -33,7 +33,7 @@ export type PendingClaim = {
 
 export type RepairCategory = "plumbing" | "electrical" | "appliance" | "other";
 
-export type RepairStatus = "pending" | "done";
+export type RepairStatus = "pending" | "scheduled" | "in_progress" | "done";
 
 export type RepairInput = {
   category: RepairCategory;
@@ -54,16 +54,28 @@ export type RoomRepair = {
   note: string;
   submittedOn: string;
   status: RepairStatus;
+  visitStart: string | null;
+  visitEnd: string | null;
   doneOn: string | null;
 };
 
-export type PendingRepair = {
+export type AdminRepair = {
   room: RoomLetter;
   requestId: string;
   category: RepairCategory;
   note: string;
   submittedOn: string;
+  status: RepairStatus;
+  visitStart: string | null;
+  visitEnd: string | null;
+  doneOn: string | null;
+  expenseAmount: number | null;
 };
+
+export type PendingRepair = Pick<
+  AdminRepair,
+  "room" | "requestId" | "category" | "note" | "submittedOn"
+>;
 
 export type FeedPayment = {
   period: string;
@@ -101,6 +113,11 @@ export type RoomRepairsResult =
   | { kind: "unavailable" };
 
 export type AdminRepairsResult =
+  | { kind: "ok"; repairs: AdminRepair[]; expenseTotal: number }
+  | { kind: "denied" }
+  | { kind: "unavailable" };
+
+export type PendingRepairsResult =
   | { kind: "ok"; repairs: PendingRepair[] }
   | { kind: "denied" }
   | { kind: "unavailable" };

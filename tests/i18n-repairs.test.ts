@@ -38,14 +38,14 @@ describe("repair dictionary copy", () => {
     }
   });
 
-  it("covers every stored category and both statuses", () => {
+  it("covers every stored category and status", () => {
     for (const dictionary of [en, zhTW]) {
       expect(
         Object.keys(dictionary.room.repairs.categories).sort(),
       ).toEqual([...REPAIR_CATEGORIES].sort());
       expect(
         Object.keys(dictionary.room.repairs.history.status).sort(),
-      ).toEqual(["done", "pending"]);
+      ).toEqual(["done", "in_progress", "pending", "scheduled"]);
       expect(dictionary.admin.repairs.pending).toBe(
         dictionary.room.repairs.history.status.pending,
       );

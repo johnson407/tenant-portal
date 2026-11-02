@@ -7,12 +7,14 @@ const mocks = vi.hoisted(() => ({
   notFound: vi.fn(),
   getBankAccount: vi.fn(),
   listPendingClaims: vi.fn(),
-  listPendingRepairs: vi.fn(),
+  listAdminRepairs: vi.fn(),
   listLeaseRenewals: vi.fn(),
   resetForm: vi.fn(),
   bankForm: vi.fn(),
   claimConfirmForm: vi.fn(),
   repairDoneForm: vi.fn(),
+  repairStatusForm: vi.fn(),
+  repairExpenseForm: vi.fn(),
 }));
 
 vi.mock("@/lib/session-cookies", () => ({
@@ -37,7 +39,7 @@ vi.mock("@/lib/appfeed/claims", () => ({
 }));
 
 vi.mock("@/lib/appfeed/repairs", () => ({
-  listPendingRepairs: mocks.listPendingRepairs,
+  listAdminRepairs: mocks.listAdminRepairs,
 }));
 
 vi.mock("@/lib/appfeed/renewal", () => ({
@@ -54,6 +56,14 @@ vi.mock("@/app/[lang]/admin/bank-form", () => ({
 
 vi.mock("@/app/[lang]/admin/repair-done-form", () => ({
   default: mocks.repairDoneForm,
+}));
+
+vi.mock("@/app/[lang]/admin/repair-status-form", () => ({
+  default: mocks.repairStatusForm,
+}));
+
+vi.mock("@/app/[lang]/admin/repair-expense-form", () => ({
+  default: mocks.repairExpenseForm,
 }));
 
 vi.mock("@/app/[lang]/admin/claim-confirm-form", () => ({
@@ -78,12 +88,14 @@ beforeEach(() => {
   });
   mocks.getBankAccount.mockResolvedValue(null);
   mocks.listPendingClaims.mockResolvedValue({ kind: "ok", claims: [] });
-  mocks.listPendingRepairs.mockResolvedValue({ kind: "ok", repairs: [] });
+  mocks.listAdminRepairs.mockResolvedValue({ kind: "ok", repairs: [], expenseTotal: 0 });
   mocks.listLeaseRenewals.mockResolvedValue({ kind: "ok", renewals: [] });
   mocks.resetForm.mockReturnValue(null);
   mocks.bankForm.mockReturnValue(null);
   mocks.claimConfirmForm.mockReturnValue(null);
   mocks.repairDoneForm.mockReturnValue(null);
+  mocks.repairStatusForm.mockReturnValue(null);
+  mocks.repairExpenseForm.mockReturnValue(null);
 });
 
 describe("localized admin page", () => {
@@ -137,7 +149,7 @@ describe("localized admin page", () => {
     expect(mocks.redirect).toHaveBeenCalledWith("/en/admin/login");
     expect(mocks.getBankAccount).not.toHaveBeenCalled();
     expect(mocks.listPendingClaims).not.toHaveBeenCalled();
-    expect(mocks.listPendingRepairs).not.toHaveBeenCalled();
+    expect(mocks.listAdminRepairs).not.toHaveBeenCalled();
     expect(mocks.listLeaseRenewals).not.toHaveBeenCalled();
   });
 
@@ -271,11 +283,16 @@ describe("admin repair requests", () => {
     category: "plumbing" as const,
     note: "Leaking tap in the bathroom",
     submittedOn: "2026-10-30",
+    status: "pending" as const,
+    visitStart: null,
+    visitEnd: null,
+    doneOn: null,
+    expenseAmount: null,
   };
 
   it("lists pending repairs with the category, note, date, status, and form", async () => {
     mocks.isAdminSession.mockResolvedValue(true);
-    mocks.listPendingRepairs.mockResolvedValue({
+    mocks.listAdminRepairs.mockResolvedValue({
       kind: "ok",
       repairs: [REPAIR],
     });
@@ -285,7 +302,7 @@ describe("admin repair requests", () => {
       await AdminPage({ params: Promise.resolve({ lang: "zh-TW" }) }),
     );
 
-    expect(html).toContain("待處理的報修申請");
+    expect(html).toContain("報修申請");
     expect(html).toContain("房間 a</span>");
     expect(html).toContain("水管");
     expect(html).toContain("Leaking tap in the bathroom");
@@ -293,7 +310,7 @@ describe("admin repair requests", () => {
     expect(html).toContain("待處理");
     expect(html).toContain("repair-done-form");
     expect(html).toContain("break-words");
-    const repairsAt = html.indexOf("待處理的報修申請");
+    const repairsAt = html.indexOf("報修申請");
     expect(html.slice(repairsAt)).not.toContain("<table");
     expect(html.slice(repairsAt)).not.toContain("overflow-x-auto");
     expect(mocks.repairDoneForm).toHaveBeenCalledWith(
@@ -307,7 +324,7 @@ describe("admin repair requests", () => {
 
   it("renders the English repair queue labels", async () => {
     mocks.isAdminSession.mockResolvedValue(true);
-    mocks.listPendingRepairs.mockResolvedValue({
+    mocks.listAdminRepairs.mockResolvedValue({
       kind: "ok",
       repairs: [REPAIR],
     });
@@ -317,10 +334,73 @@ describe("admin repair requests", () => {
       await AdminPage({ params: Promise.resolve({ lang: "en" }) }),
     );
 
-    expect(html).toContain("Pending repair requests");
+    expect(html).toContain("Repair requests");
     expect(html).toContain("Plumbing");
     expect(html).toContain("Oct 30, 2026");
     expect(html).toContain("Pending");
+  });
+
+  it("shows active controls and completed expense editing in both locales", async () => {
+    mocks.isAdminSession.mockResolvedValue(true);
+    mocks.listAdminRepairs.mockResolvedValue({
+      kind: "ok",
+      expenseTotal: 1250,
+      repairs: [
+        {
+          ...REPAIR,
+          status: "scheduled",
+          visitStart: "2026-11-04T09:00+08:00",
+          visitEnd: "2026-11-04T12:00+08:00",
+        },
+        {
+          ...REPAIR,
+          requestId: "fedcba9876543210",
+          status: "done",
+          doneOn: "2026-11-01",
+          expenseAmount: 1250,
+        },
+      ],
+    });
+    mocks.repairStatusForm.mockReturnValue("repair-status-form");
+    mocks.repairExpenseForm.mockReturnValue("repair-expense-form");
+    mocks.repairDoneForm.mockReturnValue("repair-done-form");
+
+    const en = renderToStaticMarkup(
+      await AdminPage({ params: Promise.resolve({ lang: "en" }) }),
+    );
+    expect(en).toContain("Active repairs");
+    expect(en).toContain("Completed repairs");
+    expect(en).toContain("Total recorded expenses");
+    expect(en).toContain("NT$1,250");
+    expect(en).toContain("repair-status-form");
+    expect(en).toContain("repair-expense-form");
+    expect(mocks.repairStatusForm).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "scheduled", visitStart: "2026-11-04T09:00+08:00" }),
+      undefined,
+    );
+    expect(mocks.repairExpenseForm).toHaveBeenCalledWith(
+      expect.objectContaining({ expenseAmount: 1250 }),
+      undefined,
+    );
+
+    const zh = renderToStaticMarkup(
+      await AdminPage({ params: Promise.resolve({ lang: "zh-TW" }) }),
+    );
+    expect(zh).toContain("處理中的報修");
+    expect(zh).toContain("已完成的報修");
+    expect(zh).toContain("已記錄費用總額");
+    expect(mocks.repairStatusForm).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        labels: expect.objectContaining({ saveStatus: "儲存狀態與到訪時間" }),
+      }),
+      undefined,
+    );
+    expect(mocks.repairExpenseForm).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        labels: expect.objectContaining({ saveExpense: "儲存費用" }),
+      }),
+      undefined,
+    );
   });
 
   it("renders the empty queue state", async () => {
@@ -330,14 +410,14 @@ describe("admin repair requests", () => {
       await AdminPage({ params: Promise.resolve({ lang: "en" }) }),
     );
 
-    expect(html).toContain("Pending repair requests");
-    expect(html).toContain("No pending repair requests.");
+    expect(html).toContain("Repair requests");
+    expect(html).toContain("No repair requests.");
     expect(mocks.repairDoneForm).not.toHaveBeenCalled();
   });
 
   it("redirects when the repair accessor denies the session", async () => {
     mocks.isAdminSession.mockResolvedValue(true);
-    mocks.listPendingRepairs.mockResolvedValue({ kind: "denied" });
+    mocks.listAdminRepairs.mockResolvedValue({ kind: "denied" });
 
     await expect(
       AdminPage({ params: Promise.resolve({ lang: "en" }) }),
@@ -348,7 +428,7 @@ describe("admin repair requests", () => {
 
   it("shows the repair unavailable notice while claims stay usable", async () => {
     mocks.isAdminSession.mockResolvedValue(true);
-    mocks.listPendingRepairs.mockResolvedValue({ kind: "unavailable" });
+    mocks.listAdminRepairs.mockResolvedValue({ kind: "unavailable" });
     mocks.listPendingClaims.mockResolvedValue({
       kind: "ok",
       claims: [
@@ -366,6 +446,7 @@ describe("admin repair requests", () => {
     );
 
     expect(html).toContain("Repair requests are temporarily unavailable");
+    expect(html).not.toContain("Total recorded expenses");
     expect(html).toContain("Pending payment claims");
     expect(html).toContain("01234");
     expect(mocks.resetForm).toHaveBeenCalled();
@@ -375,7 +456,7 @@ describe("admin repair requests", () => {
   it("keeps repairs usable when the claims list fails", async () => {
     mocks.isAdminSession.mockResolvedValue(true);
     mocks.listPendingClaims.mockRejectedValue(new Error("claims down"));
-    mocks.listPendingRepairs.mockResolvedValue({
+    mocks.listAdminRepairs.mockResolvedValue({
       kind: "ok",
       repairs: [REPAIR],
     });
@@ -403,7 +484,7 @@ describe("admin repair requests", () => {
         },
       ],
     });
-    mocks.listPendingRepairs.mockResolvedValue({
+    mocks.listAdminRepairs.mockResolvedValue({
       kind: "ok",
       repairs: [REPAIR],
     });
@@ -414,11 +495,11 @@ describe("admin repair requests", () => {
     );
 
     expect(html.indexOf("Pending payment claims")).toBeLessThan(
-      html.indexOf("Pending repair requests"),
+      html.indexOf("Repair requests"),
     );
     expect(html).toContain("lg:col-span-2");
     expect(mocks.listPendingClaims).toHaveBeenCalledTimes(1);
-    expect(mocks.listPendingRepairs).toHaveBeenCalledTimes(1);
+    expect(mocks.listAdminRepairs).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -503,7 +584,7 @@ describe("admin lease renewal reminders", () => {
     expect(banner).toBeGreaterThan(html.indexOf("</header>"));
     expect(banner).toBeLessThan(html.indexOf('class="mt-8 grid gap-6'));
     expect(banner).toBeLessThan(html.indexOf("待確認的付款回報"));
-    expect(banner).toBeLessThan(html.indexOf("待處理的報修申請"));
+    expect(banner).toBeLessThan(html.indexOf("報修申請"));
   });
 
   it("localizes the banner in English", async () => {
@@ -536,7 +617,7 @@ describe("admin lease renewal reminders", () => {
         },
       ],
     });
-    mocks.listPendingRepairs.mockResolvedValue({
+    mocks.listAdminRepairs.mockResolvedValue({
       kind: "ok",
       repairs: [
         {
@@ -559,7 +640,7 @@ describe("admin lease renewal reminders", () => {
     expect(html).not.toContain("Lease renewals due");
     expect(html).toContain("Pending payment claims");
     expect(html).toContain("01234");
-    expect(html).toContain("Pending repair requests");
+    expect(html).toContain("Repair requests");
     expect(html).toContain("Leaking tap");
     expect(mocks.resetForm).toHaveBeenCalled();
     expect(mocks.bankForm).toHaveBeenCalled();
@@ -575,7 +656,7 @@ describe("admin lease renewal reminders", () => {
       "Lease renewal reminders are temporarily unavailable. Try again later.",
     );
     expect(html).toContain("Pending payment claims");
-    expect(html).toContain("Pending repair requests");
+    expect(html).toContain("Repair requests");
     expect(mocks.resetForm).toHaveBeenCalled();
     expect(mocks.bankForm).toHaveBeenCalled();
   });
